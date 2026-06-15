@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { Row } from "@/lib/smartdok-parser";
 import { Trash2, Plus, Filter, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { parseSmartdok, type Parsed, fmtSumNum } from "@/lib/smartdok-parser";
