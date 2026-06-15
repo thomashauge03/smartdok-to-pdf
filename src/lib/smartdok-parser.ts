@@ -118,8 +118,11 @@ export async function parseSmartdok(file: File): Promise<Parsed> {
     const d = cDato >= 0 ? excelSerialToDate(r[cDato]) : null;
     const datoStr = d ? fmtDate(d) : String(r[cDato] ?? "");
     if (d) {
-      const key = `${MAANEDER[d.getMonth()]} ${d.getFullYear()}`;
-      months.set(key, (months.get(key) ?? 0) + 1);
+      const key = `${d.getFullYear()}-${d.getMonth()}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        months.push({ key, year: d.getFullYear(), month: d.getMonth() });
+      }
     }
 
     if (!prosjektRaw && cPro >= 0) prosjektRaw = String(r[cPro] ?? "");
