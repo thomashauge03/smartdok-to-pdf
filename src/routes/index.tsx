@@ -36,6 +36,28 @@ function Index() {
   });
   const [dateSort, setDateSort] = useState<"none" | "asc" | "desc">("none");
 
+  const DEFAULT_COL_WIDTHS = [70, 140, 380, 90, 70, 130, 140, 70, 40];
+  const [colWidths, setColWidths] = useState<number[]>(DEFAULT_COL_WIDTHS);
+  const resizing = useRef<{ idx: number; startX: number; startW: number } | null>(null);
+
+  const onResizeStart = (idx: number, e: React.MouseEvent) => {
+    e.preventDefault();
+    resizing.current = { idx, startX: e.clientX, startW: colWidths[idx] };
+    const onMove = (ev: MouseEvent) => {
+      const r = resizing.current;
+      if (!r) return;
+      const next = Math.max(40, r.startW + (ev.clientX - r.startX));
+      setColWidths((ws) => ws.map((w, i) => (i === r.idx ? next : w)));
+    };
+    const onUp = () => {
+      resizing.current = null;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
   const parseDato = (s: string): number => {
     const m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$/);
     if (!m) return 0;
