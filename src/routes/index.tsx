@@ -240,7 +240,7 @@ function Index() {
                       { label: "Tid" },
                       { label: "Navn", filter: "navn" as const },
                       { label: "Kommentar" },
-                      { label: "Dato" },
+                      { label: "Dato", sort: true as const },
                       { label: "Timer" },
                       { label: "AER timer", filter: "aerTimer" as const },
                       { label: "Maskinnavn1", filter: "maskin" as const },
