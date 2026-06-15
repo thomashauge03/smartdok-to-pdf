@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useMemo, useState } from "react";
 import type { Row } from "@/lib/smartdok-parser";
-import { Trash2, Plus, Filter } from "lucide-react";
+import { Trash2, Plus, Filter, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { parseSmartdok, type Parsed, fmtSumNum } from "@/lib/smartdok-parser";
 import { generatePdf, pdfFilename } from "@/lib/smartdok-pdf";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
