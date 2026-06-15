@@ -116,7 +116,7 @@ function Index() {
     if (!parsed) return;
     setBusy(true);
     try {
-      const doc = await generatePdf({ ...parsed, sumTimer, sumMaskinTimer }, prosjekt, vedlegg);
+      const doc = await generatePdf({ ...parsed, rows: visibleRows, sumTimer, sumMaskinTimer }, prosjekt, vedlegg);
       doc.save(pdfFilename(prosjekt, vedlegg));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
