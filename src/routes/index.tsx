@@ -25,6 +25,39 @@ function Index() {
   const [busy, setBusy] = useState(false);
   const [drag, setDrag] = useState(false);
 
+  const sumTimer = useMemo(
+    () => (parsed?.rows ?? []).reduce((s, r) => s + (Number(r.timer.replace(",", ".")) || 0), 0),
+    [parsed],
+  );
+  const sumMaskinTimer = useMemo(
+    () => (parsed?.rows ?? []).reduce((s, r) => s + (Number(r.maskinTimer.replace(",", ".")) || 0), 0),
+    [parsed],
+  );
+
+  const updateCell = (i: number, key: keyof Row, value: string) => {
+    setParsed((p) => {
+      if (!p) return p;
+      const rows = p.rows.map((r, idx) => (idx === i ? { ...r, [key]: value } : r));
+      return { ...p, rows };
+    });
+  };
+  const deleteRow = (i: number) => {
+    setParsed((p) => (p ? { ...p, rows: p.rows.filter((_, idx) => idx !== i) } : p));
+  };
+  const addRow = () => {
+    setParsed((p) =>
+      p
+        ? {
+            ...p,
+            rows: [
+              ...p.rows,
+              { tid: "", navn: "", kommentar: "", dato: "", timer: "", aerTimer: "", maskin: "", maskinTimer: "" },
+            ],
+          }
+        : p,
+    );
+  };
+
   const handleFile = useCallback(async (file: File) => {
     setError(null);
     setBusy(true);
