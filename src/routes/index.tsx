@@ -1,5 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import type { Row } from "@/lib/smartdok-parser";
+import { Trash2, Plus } from "lucide-react";
 import { parseSmartdok, type Parsed, fmtSumNum } from "@/lib/smartdok-parser";
 import { generatePdf, pdfFilename } from "@/lib/smartdok-pdf";
 import logoAsset from "@/assets/hmLogo.png.asset.json";
@@ -23,6 +25,39 @@ function Index() {
   const [busy, setBusy] = useState(false);
   const [drag, setDrag] = useState(false);
 
+  const sumTimer = useMemo(
+    () => (parsed?.rows ?? []).reduce((s, r) => s + (Number(r.timer.replace(",", ".")) || 0), 0),
+    [parsed],
+  );
+  const sumMaskinTimer = useMemo(
+    () => (parsed?.rows ?? []).reduce((s, r) => s + (Number(r.maskinTimer.replace(",", ".")) || 0), 0),
+    [parsed],
+  );
+
+  const updateCell = (i: number, key: keyof Row, value: string) => {
+    setParsed((p) => {
+      if (!p) return p;
+      const rows = p.rows.map((r, idx) => (idx === i ? { ...r, [key]: value } : r));
+      return { ...p, rows };
+    });
+  };
+  const deleteRow = (i: number) => {
+    setParsed((p) => (p ? { ...p, rows: p.rows.filter((_, idx) => idx !== i) } : p));
+  };
+  const addRow = () => {
+    setParsed((p) =>
+      p
+        ? {
+            ...p,
+            rows: [
+              ...p.rows,
+              { tid: "", navn: "", kommentar: "", dato: "", timer: "", aerTimer: "", maskin: "", maskinTimer: "" },
+            ],
+          }
+        : p,
+    );
+  };
+
   const handleFile = useCallback(async (file: File) => {
     setError(null);
     setBusy(true);
@@ -44,7 +79,7 @@ function Index() {
     if (!parsed) return;
     setBusy(true);
     try {
-      const doc = await generatePdf(parsed, prosjekt, vedlegg);
+      const doc = await generatePdf({ ...parsed, sumTimer, sumMaskinTimer }, prosjekt, vedlegg);
       doc.save(pdfFilename(prosjekt, vedlegg));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -131,7 +166,7 @@ function Index() {
             <div className="mt-6 flex items-center justify-between">
               <div className="text-sm text-neutral-600">
                 <span className="font-semibold">{parsed.rows.length}</span> rader,
-                {" "}sum timer: <span className="font-semibold">{fmtSumNum(parsed.sumTimer)}</span>
+                {" "}sum timer: <span className="font-semibold">{fmtSumNum(sumTimer)}</span>
               </div>
               <button
                 onClick={onDownload}
@@ -146,34 +181,61 @@ function Index() {
               <table className="w-full text-xs">
                 <thead className="bg-neutral-100 text-left">
                   <tr>
-                    {["Tid", "Navn", "Kommentar", "Dato", "Timer", "AER timer", "Maskinnavn1", "Timer"].map((h) => (
-                      <th key={h} className="border-b border-neutral-200 px-2 py-2 font-semibold">{h}</th>
+                    {["Tid", "Navn", "Kommentar", "Dato", "Timer", "AER timer", "Maskinnavn1", "Timer", ""].map((h, i) => (
+                      <th key={i} className="border-b border-neutral-200 px-2 py-2 font-semibold">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {parsed.rows.map((r, i) => (
-                    <tr key={i} className="border-b border-neutral-100">
-                      <td className="px-2 py-1.5">{r.tid}</td>
-                      <td className="px-2 py-1.5">{r.navn}</td>
-                      <td className="whitespace-pre-line px-2 py-1.5">{r.kommentar}</td>
-                      <td className="px-2 py-1.5">{r.dato}</td>
-                      <td className="px-2 py-1.5 text-right">{r.timer}</td>
-                      <td className="px-2 py-1.5">{r.aerTimer}</td>
-                      <td className="px-2 py-1.5">{r.maskin}</td>
-                      <td className="px-2 py-1.5 text-right">{r.maskinTimer}</td>
+                    <tr key={i} className="border-b border-neutral-100 hover:bg-neutral-50">
+                      {(["tid","navn","kommentar","dato","timer","aerTimer","maskin","maskinTimer"] as const).map((k) => (
+                        <td key={k} className="p-0 align-top">
+                          {k === "kommentar" ? (
+                            <textarea
+                              value={r[k]}
+                              onChange={(e) => updateCell(i, k, e.target.value)}
+                              rows={Math.max(1, r[k].split("\n").length)}
+                              className="w-full resize-none border-0 bg-transparent px-2 py-1.5 text-xs focus:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-500"
+                            />
+                          ) : (
+                            <input
+                              value={r[k]}
+                              onChange={(e) => updateCell(i, k, e.target.value)}
+                              className={`w-full border-0 bg-transparent px-2 py-1.5 text-xs focus:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-500 ${k === "timer" || k === "maskinTimer" ? "text-right" : ""}`}
+                            />
+                          )}
+                        </td>
+                      ))}
+                      <td className="px-2 py-1.5 text-right">
+                        <button
+                          onClick={() => deleteRow(i)}
+                          className="rounded p-1 text-neutral-400 hover:bg-red-50 hover:text-red-600"
+                          aria-label="Slett rad"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </td>
                     </tr>
                   ))}
                   <tr className="bg-neutral-50 font-semibold">
                     <td colSpan={3}></td>
                     <td className="px-2 py-1.5">Sum</td>
-                    <td className="px-2 py-1.5 text-right">{fmtSumNum(parsed.sumTimer)}</td>
+                    <td className="px-2 py-1.5 text-right">{fmtSumNum(sumTimer)}</td>
                     <td colSpan={2}></td>
-                    <td className="px-2 py-1.5 text-right">{fmtSumNum(parsed.sumMaskinTimer)}</td>
+                    <td className="px-2 py-1.5 text-right">{fmtSumNum(sumMaskinTimer)}</td>
+                    <td></td>
                   </tr>
                 </tbody>
               </table>
             </div>
+
+            <button
+              onClick={addRow}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
+            >
+              <Plus className="h-3.5 w-3.5" /> Legg til rad
+            </button>
           </section>
         )}
       </main>
