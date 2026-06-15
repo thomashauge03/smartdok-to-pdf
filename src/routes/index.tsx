@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { Row } from "@/lib/smartdok-parser";
 import { Trash2, Plus, Filter, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { parseSmartdok, type Parsed, fmtSumNum } from "@/lib/smartdok-parser";
@@ -35,6 +35,28 @@ function Index() {
     maskin: new Set(),
   });
   const [dateSort, setDateSort] = useState<"none" | "asc" | "desc">("none");
+
+  const DEFAULT_COL_WIDTHS = [70, 140, 380, 90, 70, 130, 140, 70, 40];
+  const [colWidths, setColWidths] = useState<number[]>(DEFAULT_COL_WIDTHS);
+  const resizing = useRef<{ idx: number; startX: number; startW: number } | null>(null);
+
+  const onResizeStart = (idx: number, e: React.MouseEvent) => {
+    e.preventDefault();
+    resizing.current = { idx, startX: e.clientX, startW: colWidths[idx] };
+    const onMove = (ev: MouseEvent) => {
+      const r = resizing.current;
+      if (!r) return;
+      const next = Math.max(40, r.startW + (ev.clientX - r.startX));
+      setColWidths((ws) => ws.map((w, i) => (i === r.idx ? next : w)));
+    };
+    const onUp = () => {
+      resizing.current = null;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
 
   const parseDato = (s: string): number => {
     const m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$/);
@@ -232,8 +254,22 @@ function Index() {
               </button>
             </div>
 
-            <div className="mt-6 overflow-x-auto rounded-md border border-neutral-200">
-              <table className="w-full text-xs">
+            <div className="mt-2 flex items-center justify-end gap-2 text-xs">
+              <button
+                onClick={() => setColWidths(DEFAULT_COL_WIDTHS)}
+                className="rounded border border-neutral-300 bg-white px-2 py-1 text-neutral-600 hover:bg-neutral-50"
+              >
+                Nullstill kolonnebredder
+              </button>
+            </div>
+
+            <div className="mt-2 overflow-x-auto rounded-md border border-neutral-200">
+              <table className="text-xs" style={{ tableLayout: "fixed", width: colWidths.reduce((a, b) => a + b, 0) }}>
+                <colgroup>
+                  {colWidths.map((w, i) => (
+                    <col key={i} style={{ width: w }} />
+                  ))}
+                </colgroup>
                 <thead className="bg-neutral-100 text-left">
                   <tr>
                     {([
@@ -247,7 +283,8 @@ function Index() {
                       { label: "Timer" },
                       { label: "" },
                     ]).map((col, i) => (
-                      <th key={i} className="border-b border-neutral-200 px-2 py-2 font-semibold">
+                      <th key={i} className="relative border-b border-neutral-200 px-2 py-2 font-semibold">
+
                         <div className="flex items-center gap-1">
                           <span>{col.label}</span>
                           {col.filter && (
@@ -314,6 +351,11 @@ function Index() {
                             </button>
                           )}
                         </div>
+                        <div
+                          onMouseDown={(e) => onResizeStart(i, e)}
+                          className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-red-400/50"
+                          aria-hidden
+                        />
                       </th>
                     ))}
                   </tr>
@@ -325,20 +367,18 @@ function Index() {
                     <tr key={i} className="border-b border-neutral-100 hover:bg-neutral-50">
                       {(["tid","navn","kommentar","dato","timer","aerTimer","maskin","maskinTimer"] as const).map((k) => (
                         <td key={k} className="p-0 align-top">
-                          {k === "kommentar" ? (
-                            <textarea
-                              value={r[k]}
-                              onChange={(e) => updateCell(i, k, e.target.value)}
-                              rows={Math.max(1, r[k].split("\n").length)}
-                              className="w-full resize-none border-0 bg-transparent px-2 py-1.5 text-xs focus:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-500"
-                            />
-                          ) : (
-                            <input
-                              value={r[k]}
-                              onChange={(e) => updateCell(i, k, e.target.value)}
-                              className={`w-full border-0 bg-transparent px-2 py-1.5 text-xs focus:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-500 ${k === "timer" || k === "maskinTimer" ? "text-right" : ""}`}
-                            />
-                          )}
+                          <textarea
+                            value={r[k]}
+                            onChange={(e) => updateCell(i, k, e.target.value)}
+                            rows={1}
+                            ref={(el) => {
+                              if (el) {
+                                el.style.height = "auto";
+                                el.style.height = el.scrollHeight + "px";
+                              }
+                            }}
+                            className={`block w-full resize-y overflow-hidden whitespace-pre-wrap break-words border-0 bg-transparent px-2 py-1.5 text-xs focus:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-500 ${k === "timer" || k === "maskinTimer" ? "text-right" : ""}`}
+                          />
                         </td>
                       ))}
                       <td className="px-2 py-1.5 text-right">
