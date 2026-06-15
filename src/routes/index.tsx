@@ -293,6 +293,26 @@ function Index() {
                               </PopoverContent>
                             </Popover>
                           )}
+                          {"sort" in col && col.sort && (
+                            <button
+                              onClick={toggleDateSort}
+                              className={`rounded p-0.5 transition ${
+                                dateSort !== "none"
+                                  ? "bg-red-600 text-white"
+                                  : "text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700"
+                              }`}
+                              aria-label="Sorter dato"
+                              title={dateSort === "asc" ? "Stigende" : dateSort === "desc" ? "Synkende" : "Sorter"}
+                            >
+                              {dateSort === "asc" ? (
+                                <ArrowUp className="h-3 w-3" />
+                              ) : dateSort === "desc" ? (
+                                <ArrowDown className="h-3 w-3" />
+                              ) : (
+                                <ArrowUpDown className="h-3 w-3" />
+                              )}
+                            </button>
+                          )}
                         </div>
                       </th>
                     ))}
