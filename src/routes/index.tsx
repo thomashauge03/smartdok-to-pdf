@@ -316,7 +316,7 @@ function Index() {
                         </button>
                       </td>
                     </tr>
-                  ))}
+                  );})}
                   <tr className="bg-neutral-50 font-semibold">
                     <td colSpan={3}></td>
                     <td className="px-2 py-1.5">Sum</td>
