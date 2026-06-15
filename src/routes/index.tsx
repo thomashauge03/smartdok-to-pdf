@@ -1,21 +1,39 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useMemo, useRef, useState } from "react";
-import type { Row } from "@/lib/smartdok-parser";
-import { Trash2, Plus, Filter, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
-import { parseSmartdok, type Parsed, fmtSumNum } from "@/lib/smartdok-parser";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Trash2,
+  Plus,
+  Filter,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
+  Eye,
+  EyeOff,
+} from "lucide-react";
+import {
+  parseSmartdok,
+  fmtSumNum,
+  sumCol,
+  COLUMNS,
+  type Parsed,
+  type Row,
+  type ColKey,
+} from "@/lib/smartdok-parser";
 import { generatePdf, pdfFilename } from "@/lib/smartdok-pdf";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import logoAsset from "@/assets/hmLogo.png.asset.json";
 
-type FilterKey = "navn" | "aerTimer" | "maskin";
-const FILTER_COLS: FilterKey[] = ["navn", "aerTimer", "maskin"];
+const FILTER_COLS = COLUMNS.filter((c) => c.filter).map((c) => c.key);
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       { title: "SmartDok → PDF | HM" },
-      { name: "description", content: "Konverter SmartDok timer-eksport til pyntet PDF med HM-logo." },
+      {
+        name: "description",
+        content: "Konverter SmartDok timer-eksport til pyntet PDF med HM-logo.",
+      },
     ],
   }),
   component: Index,
@@ -29,25 +47,28 @@ function Index() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [drag, setDrag] = useState(false);
-  const [filters, setFilters] = useState<Record<FilterKey, Set<string>>>({
-    navn: new Set(),
-    aerTimer: new Set(),
-    maskin: new Set(),
-  });
+
+  const [filters, setFilters] = useState<Record<string, Set<string>>>(() =>
+    Object.fromEntries(FILTER_COLS.map((k) => [k, new Set<string>()])),
+  );
   const [dateSort, setDateSort] = useState<"none" | "asc" | "desc">("none");
+  const [visibleCols, setVisibleCols] = useState<Set<ColKey>>(
+    () => new Set(COLUMNS.map((c) => c.key)),
+  );
 
-  const DEFAULT_COL_WIDTHS = [70, 140, 380, 90, 70, 130, 140, 70, 40];
-  const [colWidths, setColWidths] = useState<number[]>(DEFAULT_COL_WIDTHS);
-  const resizing = useRef<{ idx: number; startX: number; startW: number } | null>(null);
+  const [colWidths, setColWidths] = useState<Record<ColKey, number>>(() =>
+    Object.fromEntries(COLUMNS.map((c) => [c.key, c.defaultWidth])) as Record<ColKey, number>,
+  );
+  const resizing = useRef<{ key: ColKey; startX: number; startW: number } | null>(null);
 
-  const onResizeStart = (idx: number, e: React.MouseEvent) => {
+  const onResizeStart = (key: ColKey, e: React.MouseEvent) => {
     e.preventDefault();
-    resizing.current = { idx, startX: e.clientX, startW: colWidths[idx] };
+    resizing.current = { key, startX: e.clientX, startW: colWidths[key] };
     const onMove = (ev: MouseEvent) => {
       const r = resizing.current;
       if (!r) return;
       const next = Math.max(40, r.startW + (ev.clientX - r.startX));
-      setColWidths((ws) => ws.map((w, i) => (i === r.idx ? next : w)));
+      setColWidths((ws) => ({ ...ws, [r.key]: next }));
     };
     const onUp = () => {
       resizing.current = null;
@@ -69,8 +90,13 @@ function Index() {
   const toggleDateSort = () =>
     setDateSort((d) => (d === "none" ? "asc" : d === "asc" ? "desc" : "none"));
 
+  const visibleColList = useMemo(
+    () => COLUMNS.filter((c) => visibleCols.has(c.key)),
+    [visibleCols],
+  );
+
   const uniqueValues = useMemo(() => {
-    const map: Record<FilterKey, string[]> = { navn: [], aerTimer: [], maskin: [] };
+    const map: Record<string, string[]> = {};
     if (!parsed) return map;
     for (const k of FILTER_COLS) {
       const set = new Set<string>();
@@ -90,25 +116,26 @@ function Index() {
     return dateSort === "desc" ? sorted.reverse() : sorted;
   }, [parsed, filters, dateSort]);
 
-  const sumTimer = useMemo(
-    () => visibleRows.reduce((s, r) => s + (Number(r.timer.replace(",", ".")) || 0), 0),
-    [visibleRows],
-  );
-  const sumMaskinTimer = useMemo(
-    () => visibleRows.reduce((s, r) => s + (Number(r.maskinTimer.replace(",", ".")) || 0), 0),
-    [visibleRows],
-  );
-
-  const toggleFilter = (col: FilterKey, val: string) => {
+  const toggleFilter = (col: ColKey, val: string) => {
     setFilters((f) => {
       const next = new Set(f[col]);
-      if (next.has(val)) next.delete(val); else next.add(val);
+      if (next.has(val)) next.delete(val);
+      else next.add(val);
       return { ...f, [col]: next };
     });
   };
-  const clearFilter = (col: FilterKey) => setFilters((f) => ({ ...f, [col]: new Set() }));
+  const clearFilter = (col: ColKey) =>
+    setFilters((f) => ({ ...f, [col]: new Set() }));
 
-  const updateCell = (i: number, key: keyof Row, value: string) => {
+  const toggleColumn = (col: ColKey) =>
+    setVisibleCols((s) => {
+      const next = new Set(s);
+      if (next.has(col)) next.delete(col);
+      else next.add(col);
+      return next;
+    });
+
+  const updateCell = (i: number, key: ColKey, value: string) => {
     setParsed((p) => {
       if (!p) return p;
       const rows = p.rows.map((r, idx) => (idx === i ? { ...r, [key]: value } : r));
@@ -119,17 +146,11 @@ function Index() {
     setParsed((p) => (p ? { ...p, rows: p.rows.filter((_, idx) => idx !== i) } : p));
   };
   const addRow = () => {
-    setParsed((p) =>
-      p
-        ? {
-            ...p,
-            rows: [
-              ...p.rows,
-              { tid: "", navn: "", kommentar: "", dato: "", timer: "", aerTimer: "", maskin: "", maskinTimer: "" },
-            ],
-          }
-        : p,
-    );
+    setParsed((p) => {
+      if (!p) return p;
+      const empty = Object.fromEntries(COLUMNS.map((c) => [c.key, ""])) as Row;
+      return { ...p, rows: [...p.rows, empty] };
+    });
   };
 
   const handleFile = useCallback(async (file: File) => {
@@ -141,6 +162,8 @@ function Index() {
       setProsjekt(p.prosjekt);
       setVedlegg(p.vedlegg);
       setFilename(file.name.replace(/\.[^.]+$/, ""));
+      // Default visibility: only columns that actually contain data
+      setVisibleCols(new Set(p.populatedCols));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setParsed(null);
@@ -153,7 +176,7 @@ function Index() {
     if (!parsed) return;
     setBusy(true);
     try {
-      const doc = await generatePdf({ ...parsed, rows: visibleRows, sumTimer, sumMaskinTimer }, prosjekt, vedlegg);
+      const doc = await generatePdf(visibleRows, visibleColList.map((c) => c.key), prosjekt, vedlegg);
       doc.save(pdfFilename(prosjekt, vedlegg));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -161,6 +184,26 @@ function Index() {
       setBusy(false);
     }
   };
+
+  // Auto-grow textareas when visible rows change
+  const tbodyRef = useRef<HTMLTableSectionElement>(null);
+  useEffect(() => {
+    if (!tbodyRef.current) return;
+    const tas = tbodyRef.current.querySelectorAll("textarea");
+    tas.forEach((ta) => {
+      const el = ta as HTMLTextAreaElement;
+      el.style.height = "auto";
+      el.style.height = el.scrollHeight + "px";
+    });
+  });
+
+  const resetWidths = () =>
+    setColWidths(
+      Object.fromEntries(COLUMNS.map((c) => [c.key, c.defaultWidth])) as Record<ColKey, number>,
+    );
+
+  const tableWidth =
+    visibleColList.reduce((a, c) => a + colWidths[c.key], 0) + 40; // + delete col
 
   return (
     <div className="min-h-screen bg-neutral-50">
@@ -176,7 +219,10 @@ function Index() {
 
       <main className="mx-auto max-w-6xl px-6 py-8">
         <label
-          onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDrag(true);
+          }}
           onDragLeave={() => setDrag(false)}
           onDrop={(e) => {
             e.preventDefault();
@@ -185,7 +231,9 @@ function Index() {
             if (f) handleFile(f);
           }}
           className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-12 text-center transition ${
-            drag ? "border-red-600 bg-red-50" : "border-neutral-300 bg-white hover:border-neutral-400"
+            drag
+              ? "border-red-600 bg-red-50"
+              : "border-neutral-300 bg-white hover:border-neutral-400"
           }`}
         >
           <input
@@ -202,7 +250,9 @@ function Index() {
           </div>
           <div className="mt-1 text-sm text-neutral-500">.xls, .xlsx eller .csv fra SmartDok</div>
           {filename && (
-            <div className="mt-3 text-sm text-neutral-700">Lastet: <span className="font-medium">{filename}</span></div>
+            <div className="mt-3 text-sm text-neutral-700">
+              Lastet: <span className="font-medium">{filename}</span>
+            </div>
           )}
         </label>
 
@@ -237,76 +287,100 @@ function Index() {
               </div>
             </div>
 
-            <div className="mt-6 flex items-center justify-between">
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
               <div className="text-sm text-neutral-600">
                 <span className="font-semibold">{visibleRows.length}</span>
                 {visibleRows.length !== parsed.rows.length && (
                   <span className="text-neutral-400"> / {parsed.rows.length}</span>
-                )}
-                {" "}rader, sum timer: <span className="font-semibold">{fmtSumNum(sumTimer)}</span>
+                )}{" "}
+                rader, sum timer:{" "}
+                <span className="font-semibold">{fmtSumNum(sumCol(visibleRows, "timer"))}</span>
               </div>
-              <button
-                onClick={onDownload}
-                disabled={busy}
-                className="rounded-md bg-red-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:opacity-50"
-              >
-                {busy ? "Genererer…" : "Last ned PDF"}
-              </button>
+              <div className="flex items-center gap-2">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-3 py-2 text-xs font-medium text-neutral-700 hover:bg-neutral-50">
+                      <Eye className="h-3.5 w-3.5" /> Kolonner ({visibleCols.size}/{COLUMNS.length})
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-64 p-2">
+                    <div className="mb-2 px-1 text-xs font-semibold text-neutral-700">
+                      Vis i tabell og PDF
+                    </div>
+                    <div className="max-h-72 space-y-1 overflow-y-auto">
+                      {COLUMNS.map((c) => (
+                        <label
+                          key={c.key}
+                          className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs hover:bg-neutral-100"
+                        >
+                          <Checkbox
+                            checked={visibleCols.has(c.key)}
+                            onCheckedChange={() => toggleColumn(c.key)}
+                          />
+                          <span>{c.label}</span>
+                          <span className="ml-auto text-[10px] uppercase text-neutral-400">
+                            {c.key}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                <button
+                  onClick={resetWidths}
+                  className="rounded-md border border-neutral-300 bg-white px-3 py-2 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
+                >
+                  Nullstill bredder
+                </button>
+                <button
+                  onClick={onDownload}
+                  disabled={busy}
+                  className="rounded-md bg-red-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:opacity-50"
+                >
+                  {busy ? "Genererer…" : "Last ned PDF"}
+                </button>
+              </div>
             </div>
 
-            <div className="mt-2 flex items-center justify-end gap-2 text-xs">
-              <button
-                onClick={() => setColWidths(DEFAULT_COL_WIDTHS)}
-                className="rounded border border-neutral-300 bg-white px-2 py-1 text-neutral-600 hover:bg-neutral-50"
-              >
-                Nullstill kolonnebredder
-              </button>
-            </div>
-
-            <div className="mt-2 overflow-x-auto rounded-md border border-neutral-200">
-              <table className="text-xs" style={{ tableLayout: "fixed", width: colWidths.reduce((a, b) => a + b, 0) }}>
+            <div className="mt-4 overflow-x-auto rounded-md border border-neutral-200">
+              <table className="text-xs" style={{ tableLayout: "fixed", width: tableWidth }}>
                 <colgroup>
-                  {colWidths.map((w, i) => (
-                    <col key={i} style={{ width: w }} />
+                  {visibleColList.map((c) => (
+                    <col key={c.key} style={{ width: colWidths[c.key] }} />
                   ))}
+                  <col style={{ width: 40 }} />
                 </colgroup>
                 <thead className="bg-neutral-100 text-left">
                   <tr>
-                    {([
-                      { label: "Tid" },
-                      { label: "Navn", filter: "navn" as const },
-                      { label: "Kommentar" },
-                      { label: "Dato", sort: true as const },
-                      { label: "Timer" },
-                      { label: "AER timer", filter: "aerTimer" as const },
-                      { label: "Maskinnavn1", filter: "maskin" as const },
-                      { label: "Timer" },
-                      { label: "" },
-                    ]).map((col, i) => (
-                      <th key={i} className="relative border-b border-neutral-200 px-2 py-2 font-semibold">
-
+                    {visibleColList.map((c) => (
+                      <th
+                        key={c.key}
+                        className="relative border-b border-neutral-200 px-2 py-2 font-semibold"
+                      >
                         <div className="flex items-center gap-1">
-                          <span>{col.label}</span>
-                          {col.filter && (
+                          <span className="truncate">{c.label}</span>
+                          {c.filter && (
                             <Popover>
                               <PopoverTrigger asChild>
                                 <button
                                   className={`rounded p-0.5 transition ${
-                                    filters[col.filter].size > 0
+                                    filters[c.key].size > 0
                                       ? "bg-red-600 text-white"
                                       : "text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700"
                                   }`}
-                                  aria-label={`Filter ${col.label}`}
+                                  aria-label={`Filter ${c.label}`}
                                 >
                                   <Filter className="h-3 w-3" />
                                 </button>
                               </PopoverTrigger>
                               <PopoverContent align="start" className="w-60 p-2">
                                 <div className="mb-2 flex items-center justify-between px-1">
-                                  <span className="text-xs font-semibold text-neutral-700">Filter {col.label}</span>
-                                  {filters[col.filter].size > 0 && (
+                                  <span className="text-xs font-semibold text-neutral-700">
+                                    Filter {c.label}
+                                  </span>
+                                  {filters[c.key].size > 0 && (
                                     <button
-                                      onClick={() => clearFilter(col.filter!)}
+                                      onClick={() => clearFilter(c.key)}
                                       className="text-xs text-red-600 hover:underline"
                                     >
                                       Nullstill
@@ -314,23 +388,25 @@ function Index() {
                                   )}
                                 </div>
                                 <div className="max-h-64 space-y-1 overflow-y-auto">
-                                  {uniqueValues[col.filter].map((v) => (
+                                  {(uniqueValues[c.key] ?? []).map((v) => (
                                     <label
                                       key={v}
                                       className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs hover:bg-neutral-100"
                                     >
                                       <Checkbox
-                                        checked={filters[col.filter!].has(v)}
-                                        onCheckedChange={() => toggleFilter(col.filter!, v)}
+                                        checked={filters[c.key].has(v)}
+                                        onCheckedChange={() => toggleFilter(c.key, v)}
                                       />
-                                      <span className="truncate">{v || <em className="text-neutral-400">(tom)</em>}</span>
+                                      <span className="truncate">
+                                        {v || <em className="text-neutral-400">(tom)</em>}
+                                      </span>
                                     </label>
                                   ))}
                                 </div>
                               </PopoverContent>
                             </Popover>
                           )}
-                          {"sort" in col && col.sort && (
+                          {c.sort && (
                             <button
                               onClick={toggleDateSort}
                               className={`rounded p-0.5 transition ${
@@ -339,7 +415,13 @@ function Index() {
                                   : "text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700"
                               }`}
                               aria-label="Sorter dato"
-                              title={dateSort === "asc" ? "Stigende" : dateSort === "desc" ? "Synkende" : "Sorter"}
+                              title={
+                                dateSort === "asc"
+                                  ? "Stigende"
+                                  : dateSort === "desc"
+                                    ? "Synkende"
+                                    : "Sorter"
+                              }
                             >
                               {dateSort === "asc" ? (
                                 <ArrowUp className="h-3 w-3" />
@@ -350,54 +432,71 @@ function Index() {
                               )}
                             </button>
                           )}
+                          <button
+                            onClick={() => toggleColumn(c.key)}
+                            className="ml-auto rounded p-0.5 text-neutral-300 hover:bg-neutral-200 hover:text-neutral-700"
+                            aria-label={`Skjul ${c.label}`}
+                            title="Skjul kolonne"
+                          >
+                            <EyeOff className="h-3 w-3" />
+                          </button>
                         </div>
                         <div
-                          onMouseDown={(e) => onResizeStart(i, e)}
+                          onMouseDown={(e) => onResizeStart(c.key, e)}
                           className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-red-400/50"
                           aria-hidden
                         />
                       </th>
                     ))}
+                    <th className="border-b border-neutral-200"></th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody ref={tbodyRef}>
                   {visibleRows.map((r) => {
                     const i = parsed.rows.indexOf(r);
                     return (
-                    <tr key={i} className="border-b border-neutral-100 hover:bg-neutral-50">
-                      {(["tid","navn","kommentar","dato","timer","aerTimer","maskin","maskinTimer"] as const).map((k) => (
-                        <td key={k} className="p-0 align-top">
-                          <textarea
-                            value={r[k]}
-                            onChange={(e) => updateCell(i, k, e.target.value)}
-                            rows={1}
-                            ref={(el) => {
-                              if (el) {
-                                el.style.height = "auto";
-                                el.style.height = el.scrollHeight + "px";
-                              }
-                            }}
-                            className={`block w-full resize-y overflow-hidden whitespace-pre-wrap break-words border-0 bg-transparent px-2 py-1.5 text-xs focus:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-500 ${k === "timer" || k === "maskinTimer" ? "text-right" : ""}`}
-                          />
+                      <tr key={i} className="border-b border-neutral-100 hover:bg-neutral-50">
+                        {visibleColList.map((c) => (
+                          <td key={c.key} className="p-0 align-top">
+                            <textarea
+                              value={r[c.key]}
+                              onChange={(e) => updateCell(i, c.key, e.target.value)}
+                              rows={1}
+                              className={`block w-full resize-y overflow-hidden whitespace-pre-wrap break-words border-0 bg-transparent px-2 py-1.5 text-xs focus:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-500 ${
+                                c.align === "right" ? "text-right" : ""
+                              }`}
+                            />
+                          </td>
+                        ))}
+                        <td className="px-2 py-1.5 text-right align-top">
+                          <button
+                            onClick={() => deleteRow(i)}
+                            className="rounded p-1 text-neutral-400 hover:bg-red-50 hover:text-red-600"
+                            aria-label="Slett rad"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
                         </td>
-                      ))}
-                      <td className="px-2 py-1.5 text-right">
-                        <button
-                          onClick={() => deleteRow(i)}
-                          className="rounded p-1 text-neutral-400 hover:bg-red-50 hover:text-red-600"
-                          aria-label="Slett rad"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </td>
-                    </tr>
-                  );})}
+                      </tr>
+                    );
+                  })}
                   <tr className="bg-neutral-50 font-semibold">
-                    <td colSpan={3}></td>
-                    <td className="px-2 py-1.5">Sum</td>
-                    <td className="px-2 py-1.5 text-right">{fmtSumNum(sumTimer)}</td>
-                    <td colSpan={2}></td>
-                    <td className="px-2 py-1.5 text-right">{fmtSumNum(sumMaskinTimer)}</td>
+                    {visibleColList.map((c, idx) => {
+                      const firstSumIdx = visibleColList.findIndex((x) => x.sum);
+                      if (c.sum)
+                        return (
+                          <td key={c.key} className="px-2 py-1.5 text-right">
+                            {fmtSumNum(sumCol(visibleRows, c.key))}
+                          </td>
+                        );
+                      if (idx === firstSumIdx - 1)
+                        return (
+                          <td key={c.key} className="px-2 py-1.5 text-right">
+                            Sum
+                          </td>
+                        );
+                      return <td key={c.key}></td>;
+                    })}
                     <td></td>
                   </tr>
                 </tbody>
