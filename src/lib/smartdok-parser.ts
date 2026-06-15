@@ -103,7 +103,8 @@ export async function parseSmartdok(file: File): Promise<Parsed> {
 
   const rows: Row[] = [];
   let prosjektRaw = "";
-  const months = new Map<string, number>();
+  const months: { key: string; year: number; month: number }[] = [];
+  const seen = new Set<string>();
   let sumTimer = 0;
   let sumMaskinTimer = 0;
 
