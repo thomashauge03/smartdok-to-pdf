@@ -77,14 +77,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
+      { title: "Pdf generator" },
+      { name: "description", content: "Converts SmartDok CSV data into a customizable, branded PDF report." },
       { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { property: "og:title", content: "Pdf generator" },
+      { property: "og:description", content: "Converts SmartDok CSV data into a customizable, branded PDF report." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "Pdf generator" },
+      { name: "twitter:description", content: "Converts SmartDok CSV data into a customizable, branded PDF report." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/9c18b794-7341-41b7-ac37-89398e471a27/id-preview-3028ad9c--f8db6520-8c30-4ca8-b05b-845e13d6adc7.lovable.app-1781538375052.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/9c18b794-7341-41b7-ac37-89398e471a27/id-preview-3028ad9c--f8db6520-8c30-4ca8-b05b-845e13d6adc7.lovable.app-1781538375052.png" },
     ],
     links: [
       {
