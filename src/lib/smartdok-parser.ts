@@ -144,10 +144,20 @@ export async function parseSmartdok(file: File): Promise<Parsed> {
     });
   }
 
-  // most common month
+  // Build vedlegg from chronological months: "April - Mai 2026" or "Desember 2025 - Januar 2026"
+  months.sort((a, b) => a.year - b.year || a.month - b.month);
   let vedlegg = "";
-  let best = 0;
-  for (const [k, c] of months) if (c > best) { best = c; vedlegg = k; }
+  if (months.length === 1) {
+    vedlegg = `${MAANEDER[months[0].month]} ${months[0].year}`;
+  } else if (months.length > 1) {
+    const first = months[0];
+    const last = months[months.length - 1];
+    if (first.year === last.year) {
+      vedlegg = `${MAANEDER[first.month]} - ${MAANEDER[last.month]} ${last.year}`;
+    } else {
+      vedlegg = `${MAANEDER[first.month]} ${first.year} - ${MAANEDER[last.month]} ${last.year}`;
+    }
+  }
 
   return {
     rows,
