@@ -29,15 +29,47 @@ function Index() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [drag, setDrag] = useState(false);
+  const [filters, setFilters] = useState<Record<FilterKey, Set<string>>>({
+    navn: new Set(),
+    aerTimer: new Set(),
+    maskin: new Set(),
+  });
+
+  const uniqueValues = useMemo(() => {
+    const map: Record<FilterKey, string[]> = { navn: [], aerTimer: [], maskin: [] };
+    if (!parsed) return map;
+    for (const k of FILTER_COLS) {
+      const set = new Set<string>();
+      for (const r of parsed.rows) set.add(r[k] || "");
+      map[k] = Array.from(set).sort();
+    }
+    return map;
+  }, [parsed]);
+
+  const visibleRows = useMemo(() => {
+    if (!parsed) return [] as Row[];
+    return parsed.rows.filter((r) =>
+      FILTER_COLS.every((k) => filters[k].size === 0 || filters[k].has(r[k] || "")),
+    );
+  }, [parsed, filters]);
 
   const sumTimer = useMemo(
-    () => (parsed?.rows ?? []).reduce((s, r) => s + (Number(r.timer.replace(",", ".")) || 0), 0),
-    [parsed],
+    () => visibleRows.reduce((s, r) => s + (Number(r.timer.replace(",", ".")) || 0), 0),
+    [visibleRows],
   );
   const sumMaskinTimer = useMemo(
-    () => (parsed?.rows ?? []).reduce((s, r) => s + (Number(r.maskinTimer.replace(",", ".")) || 0), 0),
-    [parsed],
+    () => visibleRows.reduce((s, r) => s + (Number(r.maskinTimer.replace(",", ".")) || 0), 0),
+    [visibleRows],
   );
+
+  const toggleFilter = (col: FilterKey, val: string) => {
+    setFilters((f) => {
+      const next = new Set(f[col]);
+      if (next.has(val)) next.delete(val); else next.add(val);
+      return { ...f, [col]: next };
+    });
+  };
+  const clearFilter = (col: FilterKey) => setFilters((f) => ({ ...f, [col]: new Set() }));
 
   const updateCell = (i: number, key: keyof Row, value: string) => {
     setParsed((p) => {
