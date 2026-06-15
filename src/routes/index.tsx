@@ -1,10 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useMemo, useState } from "react";
 import type { Row } from "@/lib/smartdok-parser";
-import { Trash2, Plus } from "lucide-react";
+import { Trash2, Plus, Filter } from "lucide-react";
 import { parseSmartdok, type Parsed, fmtSumNum } from "@/lib/smartdok-parser";
 import { generatePdf, pdfFilename } from "@/lib/smartdok-pdf";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
 import logoAsset from "@/assets/hmLogo.png.asset.json";
+
+type FilterKey = "navn" | "aerTimer" | "maskin";
+const FILTER_COLS: FilterKey[] = ["navn", "aerTimer", "maskin"];
 
 export const Route = createFileRoute("/")({
   head: () => ({
