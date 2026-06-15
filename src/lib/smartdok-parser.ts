@@ -103,7 +103,8 @@ export async function parseSmartdok(file: File): Promise<Parsed> {
 
   const rows: Row[] = [];
   let prosjektRaw = "";
-  const months = new Map<string, number>();
+  const months: { key: string; year: number; month: number }[] = [];
+  const seen = new Set<string>();
   let sumTimer = 0;
   let sumMaskinTimer = 0;
 
@@ -117,8 +118,11 @@ export async function parseSmartdok(file: File): Promise<Parsed> {
     const d = cDato >= 0 ? excelSerialToDate(r[cDato]) : null;
     const datoStr = d ? fmtDate(d) : String(r[cDato] ?? "");
     if (d) {
-      const key = `${MAANEDER[d.getMonth()]} ${d.getFullYear()}`;
-      months.set(key, (months.get(key) ?? 0) + 1);
+      const key = `${d.getFullYear()}-${d.getMonth()}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        months.push({ key, year: d.getFullYear(), month: d.getMonth() });
+      }
     }
 
     if (!prosjektRaw && cPro >= 0) prosjektRaw = String(r[cPro] ?? "");
@@ -140,10 +144,20 @@ export async function parseSmartdok(file: File): Promise<Parsed> {
     });
   }
 
-  // most common month
+  // Build vedlegg from chronological months: "April - Mai 2026" or "Desember 2025 - Januar 2026"
+  months.sort((a, b) => a.year - b.year || a.month - b.month);
   let vedlegg = "";
-  let best = 0;
-  for (const [k, c] of months) if (c > best) { best = c; vedlegg = k; }
+  if (months.length === 1) {
+    vedlegg = `${MAANEDER[months[0].month]} ${months[0].year}`;
+  } else if (months.length > 1) {
+    const first = months[0];
+    const last = months[months.length - 1];
+    if (first.year === last.year) {
+      vedlegg = `${MAANEDER[first.month]} - ${MAANEDER[last.month]} ${last.year}`;
+    } else {
+      vedlegg = `${MAANEDER[first.month]} ${first.year} - ${MAANEDER[last.month]} ${last.year}`;
+    }
+  }
 
   return {
     rows,

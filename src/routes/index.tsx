@@ -1,10 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useMemo, useState } from "react";
 import type { Row } from "@/lib/smartdok-parser";
-import { Trash2, Plus } from "lucide-react";
+import { Trash2, Plus, Filter } from "lucide-react";
 import { parseSmartdok, type Parsed, fmtSumNum } from "@/lib/smartdok-parser";
 import { generatePdf, pdfFilename } from "@/lib/smartdok-pdf";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
 import logoAsset from "@/assets/hmLogo.png.asset.json";
+
+type FilterKey = "navn" | "aerTimer" | "maskin";
+const FILTER_COLS: FilterKey[] = ["navn", "aerTimer", "maskin"];
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -24,15 +29,47 @@ function Index() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [drag, setDrag] = useState(false);
+  const [filters, setFilters] = useState<Record<FilterKey, Set<string>>>({
+    navn: new Set(),
+    aerTimer: new Set(),
+    maskin: new Set(),
+  });
+
+  const uniqueValues = useMemo(() => {
+    const map: Record<FilterKey, string[]> = { navn: [], aerTimer: [], maskin: [] };
+    if (!parsed) return map;
+    for (const k of FILTER_COLS) {
+      const set = new Set<string>();
+      for (const r of parsed.rows) set.add(r[k] || "");
+      map[k] = Array.from(set).sort();
+    }
+    return map;
+  }, [parsed]);
+
+  const visibleRows = useMemo(() => {
+    if (!parsed) return [] as Row[];
+    return parsed.rows.filter((r) =>
+      FILTER_COLS.every((k) => filters[k].size === 0 || filters[k].has(r[k] || "")),
+    );
+  }, [parsed, filters]);
 
   const sumTimer = useMemo(
-    () => (parsed?.rows ?? []).reduce((s, r) => s + (Number(r.timer.replace(",", ".")) || 0), 0),
-    [parsed],
+    () => visibleRows.reduce((s, r) => s + (Number(r.timer.replace(",", ".")) || 0), 0),
+    [visibleRows],
   );
   const sumMaskinTimer = useMemo(
-    () => (parsed?.rows ?? []).reduce((s, r) => s + (Number(r.maskinTimer.replace(",", ".")) || 0), 0),
-    [parsed],
+    () => visibleRows.reduce((s, r) => s + (Number(r.maskinTimer.replace(",", ".")) || 0), 0),
+    [visibleRows],
   );
+
+  const toggleFilter = (col: FilterKey, val: string) => {
+    setFilters((f) => {
+      const next = new Set(f[col]);
+      if (next.has(val)) next.delete(val); else next.add(val);
+      return { ...f, [col]: next };
+    });
+  };
+  const clearFilter = (col: FilterKey) => setFilters((f) => ({ ...f, [col]: new Set() }));
 
   const updateCell = (i: number, key: keyof Row, value: string) => {
     setParsed((p) => {
@@ -79,7 +116,7 @@ function Index() {
     if (!parsed) return;
     setBusy(true);
     try {
-      const doc = await generatePdf({ ...parsed, sumTimer, sumMaskinTimer }, prosjekt, vedlegg);
+      const doc = await generatePdf({ ...parsed, rows: visibleRows, sumTimer, sumMaskinTimer }, prosjekt, vedlegg);
       doc.save(pdfFilename(prosjekt, vedlegg));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -165,8 +202,11 @@ function Index() {
 
             <div className="mt-6 flex items-center justify-between">
               <div className="text-sm text-neutral-600">
-                <span className="font-semibold">{parsed.rows.length}</span> rader,
-                {" "}sum timer: <span className="font-semibold">{fmtSumNum(sumTimer)}</span>
+                <span className="font-semibold">{visibleRows.length}</span>
+                {visibleRows.length !== parsed.rows.length && (
+                  <span className="text-neutral-400"> / {parsed.rows.length}</span>
+                )}
+                {" "}rader, sum timer: <span className="font-semibold">{fmtSumNum(sumTimer)}</span>
               </div>
               <button
                 onClick={onDownload}
@@ -181,13 +221,72 @@ function Index() {
               <table className="w-full text-xs">
                 <thead className="bg-neutral-100 text-left">
                   <tr>
-                    {["Tid", "Navn", "Kommentar", "Dato", "Timer", "AER timer", "Maskinnavn1", "Timer", ""].map((h, i) => (
-                      <th key={i} className="border-b border-neutral-200 px-2 py-2 font-semibold">{h}</th>
+                    {([
+                      { label: "Tid" },
+                      { label: "Navn", filter: "navn" as const },
+                      { label: "Kommentar" },
+                      { label: "Dato" },
+                      { label: "Timer" },
+                      { label: "AER timer", filter: "aerTimer" as const },
+                      { label: "Maskinnavn1", filter: "maskin" as const },
+                      { label: "Timer" },
+                      { label: "" },
+                    ]).map((col, i) => (
+                      <th key={i} className="border-b border-neutral-200 px-2 py-2 font-semibold">
+                        <div className="flex items-center gap-1">
+                          <span>{col.label}</span>
+                          {col.filter && (
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <button
+                                  className={`rounded p-0.5 transition ${
+                                    filters[col.filter].size > 0
+                                      ? "bg-red-600 text-white"
+                                      : "text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700"
+                                  }`}
+                                  aria-label={`Filter ${col.label}`}
+                                >
+                                  <Filter className="h-3 w-3" />
+                                </button>
+                              </PopoverTrigger>
+                              <PopoverContent align="start" className="w-60 p-2">
+                                <div className="mb-2 flex items-center justify-between px-1">
+                                  <span className="text-xs font-semibold text-neutral-700">Filter {col.label}</span>
+                                  {filters[col.filter].size > 0 && (
+                                    <button
+                                      onClick={() => clearFilter(col.filter!)}
+                                      className="text-xs text-red-600 hover:underline"
+                                    >
+                                      Nullstill
+                                    </button>
+                                  )}
+                                </div>
+                                <div className="max-h-64 space-y-1 overflow-y-auto">
+                                  {uniqueValues[col.filter].map((v) => (
+                                    <label
+                                      key={v}
+                                      className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs hover:bg-neutral-100"
+                                    >
+                                      <Checkbox
+                                        checked={filters[col.filter!].has(v)}
+                                        onCheckedChange={() => toggleFilter(col.filter!, v)}
+                                      />
+                                      <span className="truncate">{v || <em className="text-neutral-400">(tom)</em>}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                              </PopoverContent>
+                            </Popover>
+                          )}
+                        </div>
+                      </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {parsed.rows.map((r, i) => (
+                  {visibleRows.map((r) => {
+                    const i = parsed.rows.indexOf(r);
+                    return (
                     <tr key={i} className="border-b border-neutral-100 hover:bg-neutral-50">
                       {(["tid","navn","kommentar","dato","timer","aerTimer","maskin","maskinTimer"] as const).map((k) => (
                         <td key={k} className="p-0 align-top">
@@ -217,7 +316,7 @@ function Index() {
                         </button>
                       </td>
                     </tr>
-                  ))}
+                  );})}
                   <tr className="bg-neutral-50 font-semibold">
                     <td colSpan={3}></td>
                     <td className="px-2 py-1.5">Sum</td>
