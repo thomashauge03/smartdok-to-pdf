@@ -60,10 +60,13 @@ function Index() {
 
   const visibleRows = useMemo(() => {
     if (!parsed) return [] as Row[];
-    return parsed.rows.filter((r) =>
+    const filtered = parsed.rows.filter((r) =>
       FILTER_COLS.every((k) => filters[k].size === 0 || filters[k].has(r[k] || "")),
     );
-  }, [parsed, filters]);
+    if (dateSort === "none") return filtered;
+    const sorted = [...filtered].sort((a, b) => parseDato(a.dato) - parseDato(b.dato));
+    return dateSort === "desc" ? sorted.reverse() : sorted;
+  }, [parsed, filters, dateSort]);
 
   const sumTimer = useMemo(
     () => visibleRows.reduce((s, r) => s + (Number(r.timer.replace(",", ".")) || 0), 0),
