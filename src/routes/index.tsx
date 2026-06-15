@@ -351,6 +351,11 @@ function Index() {
                             </button>
                           )}
                         </div>
+                        <div
+                          onMouseDown={(e) => onResizeStart(i, e)}
+                          className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-red-400/50"
+                          aria-hidden
+                        />
                       </th>
                     ))}
                   </tr>
@@ -362,20 +367,18 @@ function Index() {
                     <tr key={i} className="border-b border-neutral-100 hover:bg-neutral-50">
                       {(["tid","navn","kommentar","dato","timer","aerTimer","maskin","maskinTimer"] as const).map((k) => (
                         <td key={k} className="p-0 align-top">
-                          {k === "kommentar" ? (
-                            <textarea
-                              value={r[k]}
-                              onChange={(e) => updateCell(i, k, e.target.value)}
-                              rows={Math.max(1, r[k].split("\n").length)}
-                              className="w-full resize-none border-0 bg-transparent px-2 py-1.5 text-xs focus:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-500"
-                            />
-                          ) : (
-                            <input
-                              value={r[k]}
-                              onChange={(e) => updateCell(i, k, e.target.value)}
-                              className={`w-full border-0 bg-transparent px-2 py-1.5 text-xs focus:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-500 ${k === "timer" || k === "maskinTimer" ? "text-right" : ""}`}
-                            />
-                          )}
+                          <textarea
+                            value={r[k]}
+                            onChange={(e) => updateCell(i, k, e.target.value)}
+                            rows={1}
+                            ref={(el) => {
+                              if (el) {
+                                el.style.height = "auto";
+                                el.style.height = el.scrollHeight + "px";
+                              }
+                            }}
+                            className={`block w-full resize-y overflow-hidden whitespace-pre-wrap break-words border-0 bg-transparent px-2 py-1.5 text-xs focus:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-500 ${k === "timer" || k === "maskinTimer" ? "text-right" : ""}`}
+                          />
                         </td>
                       ))}
                       <td className="px-2 py-1.5 text-right">
