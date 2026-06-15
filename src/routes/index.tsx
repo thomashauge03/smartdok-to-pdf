@@ -34,6 +34,18 @@ function Index() {
     aerTimer: new Set(),
     maskin: new Set(),
   });
+  const [dateSort, setDateSort] = useState<"none" | "asc" | "desc">("none");
+
+  const parseDato = (s: string): number => {
+    const m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$/);
+    if (!m) return 0;
+    const [, d, mo, y] = m;
+    const yr = y.length === 2 ? 2000 + Number(y) : Number(y);
+    return yr * 10000 + Number(mo) * 100 + Number(d);
+  };
+
+  const toggleDateSort = () =>
+    setDateSort((d) => (d === "none" ? "asc" : d === "asc" ? "desc" : "none"));
 
   const uniqueValues = useMemo(() => {
     const map: Record<FilterKey, string[]> = { navn: [], aerTimer: [], maskin: [] };
