@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useMemo, useState } from "react";
 import type { Row } from "@/lib/smartdok-parser";
-import { Trash2, Plus, Filter } from "lucide-react";
+import { Trash2, Plus, Filter, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { parseSmartdok, type Parsed, fmtSumNum } from "@/lib/smartdok-parser";
 import { generatePdf, pdfFilename } from "@/lib/smartdok-pdf";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -34,6 +34,18 @@ function Index() {
     aerTimer: new Set(),
     maskin: new Set(),
   });
+  const [dateSort, setDateSort] = useState<"none" | "asc" | "desc">("none");
+
+  const parseDato = (s: string): number => {
+    const m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$/);
+    if (!m) return 0;
+    const [, d, mo, y] = m;
+    const yr = y.length === 2 ? 2000 + Number(y) : Number(y);
+    return yr * 10000 + Number(mo) * 100 + Number(d);
+  };
+
+  const toggleDateSort = () =>
+    setDateSort((d) => (d === "none" ? "asc" : d === "asc" ? "desc" : "none"));
 
   const uniqueValues = useMemo(() => {
     const map: Record<FilterKey, string[]> = { navn: [], aerTimer: [], maskin: [] };
@@ -48,10 +60,13 @@ function Index() {
 
   const visibleRows = useMemo(() => {
     if (!parsed) return [] as Row[];
-    return parsed.rows.filter((r) =>
+    const filtered = parsed.rows.filter((r) =>
       FILTER_COLS.every((k) => filters[k].size === 0 || filters[k].has(r[k] || "")),
     );
-  }, [parsed, filters]);
+    if (dateSort === "none") return filtered;
+    const sorted = [...filtered].sort((a, b) => parseDato(a.dato) - parseDato(b.dato));
+    return dateSort === "desc" ? sorted.reverse() : sorted;
+  }, [parsed, filters, dateSort]);
 
   const sumTimer = useMemo(
     () => visibleRows.reduce((s, r) => s + (Number(r.timer.replace(",", ".")) || 0), 0),
@@ -225,7 +240,7 @@ function Index() {
                       { label: "Tid" },
                       { label: "Navn", filter: "navn" as const },
                       { label: "Kommentar" },
-                      { label: "Dato" },
+                      { label: "Dato", sort: true as const },
                       { label: "Timer" },
                       { label: "AER timer", filter: "aerTimer" as const },
                       { label: "Maskinnavn1", filter: "maskin" as const },
@@ -277,6 +292,26 @@ function Index() {
                                 </div>
                               </PopoverContent>
                             </Popover>
+                          )}
+                          {"sort" in col && col.sort && (
+                            <button
+                              onClick={toggleDateSort}
+                              className={`rounded p-0.5 transition ${
+                                dateSort !== "none"
+                                  ? "bg-red-600 text-white"
+                                  : "text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700"
+                              }`}
+                              aria-label="Sorter dato"
+                              title={dateSort === "asc" ? "Stigende" : dateSort === "desc" ? "Synkende" : "Sorter"}
+                            >
+                              {dateSort === "asc" ? (
+                                <ArrowUp className="h-3 w-3" />
+                              ) : dateSort === "desc" ? (
+                                <ArrowDown className="h-3 w-3" />
+                              ) : (
+                                <ArrowUpDown className="h-3 w-3" />
+                              )}
+                            </button>
                           )}
                         </div>
                       </th>
