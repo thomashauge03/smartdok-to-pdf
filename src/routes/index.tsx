@@ -254,8 +254,22 @@ function Index() {
               </button>
             </div>
 
-            <div className="mt-6 overflow-x-auto rounded-md border border-neutral-200">
-              <table className="w-full text-xs">
+            <div className="mt-2 flex items-center justify-end gap-2 text-xs">
+              <button
+                onClick={() => setColWidths(DEFAULT_COL_WIDTHS)}
+                className="rounded border border-neutral-300 bg-white px-2 py-1 text-neutral-600 hover:bg-neutral-50"
+              >
+                Nullstill kolonnebredder
+              </button>
+            </div>
+
+            <div className="mt-2 overflow-x-auto rounded-md border border-neutral-200">
+              <table className="text-xs" style={{ tableLayout: "fixed", width: colWidths.reduce((a, b) => a + b, 0) }}>
+                <colgroup>
+                  {colWidths.map((w, i) => (
+                    <col key={i} style={{ width: w }} />
+                  ))}
+                </colgroup>
                 <thead className="bg-neutral-100 text-left">
                   <tr>
                     {([
@@ -269,7 +283,8 @@ function Index() {
                       { label: "Timer" },
                       { label: "" },
                     ]).map((col, i) => (
-                      <th key={i} className="border-b border-neutral-200 px-2 py-2 font-semibold">
+                      <th key={i} className="relative border-b border-neutral-200 px-2 py-2 font-semibold">
+
                         <div className="flex items-center gap-1">
                           <span>{col.label}</span>
                           {col.filter && (
