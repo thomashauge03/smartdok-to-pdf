@@ -202,8 +202,11 @@ function Index() {
 
             <div className="mt-6 flex items-center justify-between">
               <div className="text-sm text-neutral-600">
-                <span className="font-semibold">{parsed.rows.length}</span> rader,
-                {" "}sum timer: <span className="font-semibold">{fmtSumNum(sumTimer)}</span>
+                <span className="font-semibold">{visibleRows.length}</span>
+                {visibleRows.length !== parsed.rows.length && (
+                  <span className="text-neutral-400"> / {parsed.rows.length}</span>
+                )}
+                {" "}rader, sum timer: <span className="font-semibold">{fmtSumNum(sumTimer)}</span>
               </div>
               <button
                 onClick={onDownload}
@@ -218,13 +221,72 @@ function Index() {
               <table className="w-full text-xs">
                 <thead className="bg-neutral-100 text-left">
                   <tr>
-                    {["Tid", "Navn", "Kommentar", "Dato", "Timer", "AER timer", "Maskinnavn1", "Timer", ""].map((h, i) => (
-                      <th key={i} className="border-b border-neutral-200 px-2 py-2 font-semibold">{h}</th>
+                    {([
+                      { label: "Tid" },
+                      { label: "Navn", filter: "navn" as const },
+                      { label: "Kommentar" },
+                      { label: "Dato" },
+                      { label: "Timer" },
+                      { label: "AER timer", filter: "aerTimer" as const },
+                      { label: "Maskinnavn1", filter: "maskin" as const },
+                      { label: "Timer" },
+                      { label: "" },
+                    ]).map((col, i) => (
+                      <th key={i} className="border-b border-neutral-200 px-2 py-2 font-semibold">
+                        <div className="flex items-center gap-1">
+                          <span>{col.label}</span>
+                          {col.filter && (
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <button
+                                  className={`rounded p-0.5 transition ${
+                                    filters[col.filter].size > 0
+                                      ? "bg-red-600 text-white"
+                                      : "text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700"
+                                  }`}
+                                  aria-label={`Filter ${col.label}`}
+                                >
+                                  <Filter className="h-3 w-3" />
+                                </button>
+                              </PopoverTrigger>
+                              <PopoverContent align="start" className="w-60 p-2">
+                                <div className="mb-2 flex items-center justify-between px-1">
+                                  <span className="text-xs font-semibold text-neutral-700">Filter {col.label}</span>
+                                  {filters[col.filter].size > 0 && (
+                                    <button
+                                      onClick={() => clearFilter(col.filter!)}
+                                      className="text-xs text-red-600 hover:underline"
+                                    >
+                                      Nullstill
+                                    </button>
+                                  )}
+                                </div>
+                                <div className="max-h-64 space-y-1 overflow-y-auto">
+                                  {uniqueValues[col.filter].map((v) => (
+                                    <label
+                                      key={v}
+                                      className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs hover:bg-neutral-100"
+                                    >
+                                      <Checkbox
+                                        checked={filters[col.filter!].has(v)}
+                                        onCheckedChange={() => toggleFilter(col.filter!, v)}
+                                      />
+                                      <span className="truncate">{v || <em className="text-neutral-400">(tom)</em>}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                              </PopoverContent>
+                            </Popover>
+                          )}
+                        </div>
+                      </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {parsed.rows.map((r, i) => (
+                  {visibleRows.map((r) => {
+                    const i = parsed.rows.indexOf(r);
+                    return (
                     <tr key={i} className="border-b border-neutral-100 hover:bg-neutral-50">
                       {(["tid","navn","kommentar","dato","timer","aerTimer","maskin","maskinTimer"] as const).map((k) => (
                         <td key={k} className="p-0 align-top">
