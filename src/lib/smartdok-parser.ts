@@ -161,8 +161,9 @@ export async function parseSmartdok(file: File): Promise<Parsed> {
   for (let i = 1; i < data.length; i++) {
     const r = data[i];
     if (!r || r.every((v) => v === "" || v === null || v === undefined)) continue;
-    const firstCell = String(r[0] ?? "").trim().toLowerCase();
-    if (firstCell === "sum") continue;
+    // Skip sum rows from SmartDok (first non-empty cell equals "sum")
+    const firstNonEmpty = r.find((v) => String(v ?? "").trim() !== "");
+    if (String(firstNonEmpty ?? "").trim().toLowerCase() === "sum") continue;
 
     // Extract prosjekt from Pro.navn column
     if (proNavnIdx >= 0 && !prosjektRaw) {
