@@ -1,20 +1,6 @@
 import * as XLSX from "xlsx";
 
-export type ColKey =
-  | "tid"
-  | "navn"
-  | "kommentar"
-  | "dato"
-  | "timer"
-  | "aerTimer"
-  | "maskin1"
-  | "maskinTimer1"
-  | "maskin2"
-  | "maskinTimer2"
-  | "maskin3"
-  | "maskinTimer3";
-
-export type Row = Record<ColKey, string>;
+export type ColKey = string;
 
 export type ColMeta = {
   key: ColKey;
@@ -23,32 +9,67 @@ export type ColMeta = {
   sort?: boolean;
   sum?: boolean;
   align?: "right";
-  defaultWidth: number; // px in UI
-  pdfWidth: number; // mm in PDF
+  defaultWidth: number;
+  pdfWidth: number;
 };
 
-export const COLUMNS: ColMeta[] = [
-  { key: "tid", label: "Tid", defaultWidth: 70, pdfWidth: 22 },
-  { key: "navn", label: "Navn", filter: true, defaultWidth: 140, pdfWidth: 32 },
-  { key: "kommentar", label: "Kommentar", defaultWidth: 360, pdfWidth: 70 },
-  { key: "dato", label: "Dato", sort: true, defaultWidth: 90, pdfWidth: 22 },
-  { key: "timer", label: "Timer", sum: true, align: "right", defaultWidth: 70, pdfWidth: 14 },
-  { key: "aerTimer", label: "AER timer", filter: true, defaultWidth: 120, pdfWidth: 22 },
-  { key: "maskin1", label: "Maskinnavn1", filter: true, defaultWidth: 130, pdfWidth: 32 },
-  { key: "maskinTimer1", label: "Timer", sum: true, align: "right", defaultWidth: 65, pdfWidth: 14 },
-  { key: "maskin2", label: "Maskinnavn2", filter: true, defaultWidth: 130, pdfWidth: 32 },
-  { key: "maskinTimer2", label: "Timer", sum: true, align: "right", defaultWidth: 65, pdfWidth: 14 },
-  { key: "maskin3", label: "Maskinnavn3", filter: true, defaultWidth: 130, pdfWidth: 32 },
-  { key: "maskinTimer3", label: "Timer", sum: true, align: "right", defaultWidth: 65, pdfWidth: 14 },
-];
+export type Row = Record<string, string>;
 
 export type Parsed = {
   rows: Row[];
+  columns: ColMeta[];
   prosjekt: string;
   vedlegg: string;
-  /** Columns that contain at least one non-empty value (suggested default visibility). */
   populatedCols: ColKey[];
 };
+
+// Known header → ColMeta config (key = normalized lowercase header)
+const HEADER_CONFIG: Record<string, Omit<ColMeta, "key">> = {
+  "dato":                   { label: "Dato",                  sort: true,                    defaultWidth: 90,  pdfWidth: 22 },
+  "tid":                    { label: "Tid",                                                  defaultWidth: 70,  pdfWidth: 18 },
+  "navn":                   { label: "Navn",                  filter: true,                  defaultWidth: 140, pdfWidth: 32 },
+  "aktivitet":              { label: "Aktivitet",             filter: true,                  defaultWidth: 130, pdfWidth: 28 },
+  "lønnsart":               { label: "Lønnsart",              filter: true,                  defaultWidth: 120, pdfWidth: 26 },
+  "kommentar":              { label: "Kommentar",                                            defaultWidth: 300, pdfWidth: 64 },
+  "pris mot kunde":         { label: "Pris mot kunde",        align: "right",                defaultWidth: 95,  pdfWidth: 20 },
+  "timer":                  { label: "Timer",                 sum: true,  align: "right",    defaultWidth: 68,  pdfWidth: 14 },
+  "sum":                    { label: "Sum",                   sum: true,  align: "right",    defaultWidth: 68,  pdfWidth: 16 },
+  "fakturert":              { label: "Fakturert",                                            defaultWidth: 68,  pdfWidth: 16 },
+  "overtid 50%":            { label: "Overtid 50%",           sum: true,  align: "right",    defaultWidth: 80,  pdfWidth: 18 },
+  "overtid 100%":           { label: "Overtid 100%",          sum: true,  align: "right",    defaultWidth: 80,  pdfWidth: 18 },
+  "overtid 70%":            { label: "Overtid 70%",           sum: true,  align: "right",    defaultWidth: 80,  pdfWidth: 18 },
+  "tillegg tunnelarbeid":   { label: "Tillegg tunnelarbeid",  sum: true,  align: "right",    defaultWidth: 120, pdfWidth: 26 },
+  "natttillegg":            { label: "Natttillegg",           sum: true,  align: "right",    defaultWidth: 80,  pdfWidth: 20 },
+};
+
+function headerToKey(raw: string): string {
+  return raw.trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_æøå%]/g, "");
+}
+
+function buildColMeta(rawHeader: string): ColMeta {
+  const norm = rawHeader.trim().toLowerCase();
+  const key = headerToKey(rawHeader);
+
+  // Exact known mapping
+  if (HEADER_CONFIG[norm]) {
+    return { key, ...HEADER_CONFIG[norm] };
+  }
+
+  // Machine name columns: "Maskinnavn1", "Maskinnavn2", …
+  const maskinNavnM = norm.match(/^maskinnavn(\d+)$/);
+  if (maskinNavnM) {
+    return { key, label: `Maskinnavn${maskinNavnM[1]}`, filter: true, defaultWidth: 130, pdfWidth: 30 };
+  }
+
+  // Machine timer columns: "Maskin1 Timer", "Maskin2 Timer", …
+  const maskinTimerM = norm.match(/^maskin(\d+)\s+timer$/);
+  if (maskinTimerM) {
+    return { key, label: `Timer (M${maskinTimerM[1]})`, sum: true, align: "right", defaultWidth: 68, pdfWidth: 14 };
+  }
+
+  // Fallback: use the raw header as label
+  return { key, label: rawHeader.trim(), defaultWidth: 100, pdfWidth: 22 };
+}
 
 const MAANEDER = [
   "Januar", "Februar", "Mars", "April", "Mai", "Juni",
@@ -83,13 +104,6 @@ function fmtNum(v: unknown): string {
   return Number.isInteger(n) ? String(n) : String(n).replace(".", ",");
 }
 
-function mapAer(lonnsart: string): string {
-  if (!lonnsart) return "";
-  const l = lonnsart.toLowerCase();
-  if (l.includes("timel")) return "Regning (1)";
-  return lonnsart;
-}
-
 function cleanKommentar(s: string): string {
   return String(s ?? "")
     .replace(/<br\s*\/?>/gi, "\n")
@@ -112,27 +126,37 @@ export async function parseSmartdok(file: File): Promise<Parsed> {
 
   if (!data.length) throw new Error("Tom fil");
 
-  const header = data[0].map((h) => String(h).trim().toLowerCase());
-  const idx = (name: string) => header.findIndex((h) => h === name.toLowerCase());
+  const rawHeaders = data[0].map((h) => String(h).trim());
 
-  const cTid = idx("Tid");
-  const cPro = idx("Pro.navn");
-  const cNavn = idx("Navn");
-  const cLonn = idx("Lønnsart");
-  const cKom = idx("Kommentar");
-  const cTimer = idx("Timer");
-  const cDato = idx("Dato");
-  const cMaskin = [idx("Maskinnavn1"), idx("Maskinnavn2"), idx("Maskinnavn3")];
-  const cMaskinTimer = [idx("Maskin1 Timer"), idx("Maskin2 Timer"), idx("Maskin3 Timer")];
+  if (rawHeaders.length === 0) throw new Error("Ingen kolonner funnet");
 
-  if (cDato < 0 || cTimer < 0 || cNavn < 0) {
-    throw new Error("Fant ikke forventede kolonner (Dato, Navn, Timer). Sjekk at filen er fra SmartDok.");
+  // Build column metadata for all headers except Pro.navn (used for prosjekt extraction)
+  const proNavnIdx = rawHeaders.findIndex((h) => h.toLowerCase() === "pro.navn");
+  const datoIdx = rawHeaders.findIndex((h) => h.trim().toLowerCase() === "dato");
+  const komIdx = rawHeaders.findIndex((h) => h.toLowerCase() === "kommentar");
+
+  if (datoIdx < 0) {
+    throw new Error("Fant ikke 'Dato'-kolonne. Sjekk at filen er fra SmartDok.");
+  }
+
+  // Columns to expose (skip Pro.navn — only used for prosjekt)
+  const columns: ColMeta[] = rawHeaders
+    .filter((_, i) => i !== proNavnIdx)
+    .map((h) => buildColMeta(h));
+
+  // Deduplicate keys (e.g. two columns both called "Timer")
+  const keyCounts = new Map<string, number>();
+  for (const col of columns) {
+    const baseKey = col.key;
+    const count = keyCounts.get(baseKey) ?? 0;
+    keyCounts.set(baseKey, count + 1);
+    if (count > 0) col.key = `${baseKey}_${count + 1}`;
   }
 
   const rows: Row[] = [];
   let prosjektRaw = "";
   const months: { key: string; year: number; month: number }[] = [];
-  const seen = new Set<string>();
+  const seenMonths = new Set<string>();
 
   for (let i = 1; i < data.length; i++) {
     const r = data[i];
@@ -140,31 +164,46 @@ export async function parseSmartdok(file: File): Promise<Parsed> {
     const firstCell = String(r[0] ?? "").trim().toLowerCase();
     if (firstCell === "sum") continue;
 
-    const d = cDato >= 0 ? excelSerialToDate(r[cDato]) : null;
-    const datoStr = d ? fmtDate(d) : String(r[cDato] ?? "");
-    if (d) {
-      const key = `${d.getFullYear()}-${d.getMonth()}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        months.push({ key, year: d.getFullYear(), month: d.getMonth() });
-      }
+    // Extract prosjekt from Pro.navn column
+    if (proNavnIdx >= 0 && !prosjektRaw) {
+      prosjektRaw = String(r[proNavnIdx] ?? "");
     }
-    if (!prosjektRaw && cPro >= 0) prosjektRaw = String(r[cPro] ?? "");
 
-    rows.push({
-      tid: cTid >= 0 ? String(r[cTid] ?? "") : "",
-      navn: String(r[cNavn] ?? ""),
-      kommentar: cKom >= 0 ? cleanKommentar(String(r[cKom] ?? "")) : "",
-      dato: datoStr,
-      timer: fmtNum(r[cTimer]),
-      aerTimer: cLonn >= 0 ? mapAer(String(r[cLonn] ?? "")) : "",
-      maskin1: cMaskin[0] >= 0 ? String(r[cMaskin[0]] ?? "") : "",
-      maskinTimer1: cMaskinTimer[0] >= 0 ? fmtNum(r[cMaskinTimer[0]]) : "",
-      maskin2: cMaskin[1] >= 0 ? String(r[cMaskin[1]] ?? "") : "",
-      maskinTimer2: cMaskinTimer[1] >= 0 ? fmtNum(r[cMaskinTimer[1]]) : "",
-      maskin3: cMaskin[2] >= 0 ? String(r[cMaskin[2]] ?? "") : "",
-      maskinTimer3: cMaskinTimer[2] >= 0 ? fmtNum(r[cMaskinTimer[2]]) : "",
-    });
+    // Build row
+    const row: Row = {};
+    let colPointer = 0;
+    for (let ci = 0; ci < rawHeaders.length; ci++) {
+      if (ci === proNavnIdx) continue;
+      const col = columns[colPointer];
+      if (!col) { colPointer++; continue; }
+
+      const rawVal = r[ci];
+      const norm = rawHeaders[ci].trim().toLowerCase();
+
+      if (norm === "dato") {
+        const d = excelSerialToDate(rawVal);
+        if (d) {
+          const key = `${d.getFullYear()}-${d.getMonth()}`;
+          if (!seenMonths.has(key)) {
+            seenMonths.add(key);
+            months.push({ key, year: d.getFullYear(), month: d.getMonth() });
+          }
+          row[col.key] = fmtDate(d);
+        } else {
+          row[col.key] = String(rawVal ?? "");
+        }
+      } else if (ci === komIdx) {
+        row[col.key] = cleanKommentar(String(rawVal ?? ""));
+      } else if (col.sum) {
+        row[col.key] = fmtNum(rawVal);
+      } else {
+        row[col.key] = String(rawVal ?? "");
+      }
+
+      colPointer++;
+    }
+
+    rows.push(row);
   }
 
   months.sort((a, b) => a.year - b.year || a.month - b.month);
@@ -179,11 +218,11 @@ export async function parseSmartdok(file: File): Promise<Parsed> {
       : `${MAANEDER[first.month]} ${first.year} - ${MAANEDER[last.month]} ${last.year}`;
   }
 
-  const populatedCols = COLUMNS
+  const populatedCols = columns
     .filter((c) => rows.some((r) => (r[c.key] ?? "").toString().trim() !== ""))
     .map((c) => c.key);
 
-  return { rows, prosjekt: shortProsjekt(prosjektRaw), vedlegg, populatedCols };
+  return { rows, columns, prosjekt: shortProsjekt(prosjektRaw), vedlegg, populatedCols };
 }
 
 export function fmtSumNum(n: number): string {

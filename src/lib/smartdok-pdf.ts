@@ -1,7 +1,7 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import type { ColKey, Row } from "./smartdok-parser";
-import { COLUMNS, fmtSumNum, sumCol } from "./smartdok-parser";
+import type { ColMeta, Row } from "./smartdok-parser";
+import { fmtSumNum, sumCol } from "./smartdok-parser";
 import logoAsset from "@/assets/hmLogo.png.asset.json";
 
 async function loadLogo(): Promise<string> {
@@ -17,7 +17,7 @@ async function loadLogo(): Promise<string> {
 
 export async function generatePdf(
   rows: Row[],
-  visibleCols: ColKey[],
+  cols: ColMeta[],
   prosjekt: string,
   vedlegg: string,
 ): Promise<jsPDF> {
@@ -36,9 +36,8 @@ export async function generatePdf(
     // ignore
   }
 
-  const cols = COLUMNS.filter((c) => visibleCols.includes(c.key));
   const head = [cols.map((c) => c.label)];
-  const body: any[][] = rows.map((r) => cols.map((c) => r[c.key]));
+  const body: any[][] = rows.map((r) => cols.map((c) => r[c.key] ?? ""));
 
   // Sum row: put "Sum" label in first cell (or before first sum), and each sum column shows its total
   const firstSumIdx = cols.findIndex((c) => c.sum);
