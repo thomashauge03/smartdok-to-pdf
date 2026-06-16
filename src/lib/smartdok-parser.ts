@@ -219,7 +219,10 @@ export async function parseSmartdok(file: File): Promise<Parsed> {
   }
 
   const populatedCols = columns
-    .filter((c) => rows.some((r) => (r[c.key] ?? "").toString().trim() !== ""))
+    .filter((c) => rows.some((r) => {
+      const v = (r[c.key] ?? "").toString().trim();
+      return v !== "" && v !== "0";
+    }))
     .map((c) => c.key);
 
   return { rows, columns, prosjekt: shortProsjekt(prosjektRaw), vedlegg, populatedCols };
