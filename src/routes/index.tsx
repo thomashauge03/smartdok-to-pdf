@@ -13,6 +13,8 @@ import {
   RotateCcw,
   Download,
   X,
+  RectangleHorizontal,
+  RectangleVertical,
 } from "lucide-react";
 import {
   parseSmartdok,
@@ -23,7 +25,7 @@ import {
   type ColKey,
   type ColMeta,
 } from "@/lib/smartdok-parser";
-import { generatePdf, pdfFilename } from "@/lib/smartdok-pdf";
+import { generatePdf, pdfFilename, type PdfOrientation } from "@/lib/smartdok-pdf";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import logoAsset from "@/assets/hmLogo.png.asset.json";
@@ -71,6 +73,7 @@ function Index() {
   const [busy, setBusy] = useState(false);
   const [drag, setDrag] = useState(false);
 
+  const [orientation, setOrientation] = useState<PdfOrientation>("landscape");
   const [filters, setFilters] = useState<Record<string, Set<string>>>({});
   const [dateSort, setDateSort] = useState<"none" | "asc" | "desc">("none");
   const [visibleCols, setVisibleCols] = useState<Set<ColKey>>(new Set());
@@ -203,7 +206,7 @@ function Index() {
     if (!parsed) return;
     setBusy(true);
     try {
-      const doc = await generatePdf(visibleRows, visibleColList, prosjekt, vedlegg);
+      const doc = await generatePdf(visibleRows, visibleColList, prosjekt, vedlegg, orientation);
       doc.save(pdfFilename(prosjekt, vedlegg));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -431,6 +434,34 @@ function Index() {
                     </div>
                   </PopoverContent>
                 </Popover>
+
+                {/* Orientation toggle */}
+                <div className="flex overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-xs">
+                  <button
+                    onClick={() => setOrientation("landscape")}
+                    title="Liggende (A4)"
+                    className={`inline-flex h-7 items-center gap-1 px-2.5 text-xs font-medium transition ${
+                      orientation === "landscape"
+                        ? "bg-neutral-900 text-white"
+                        : "text-neutral-500 hover:bg-neutral-50 hover:text-neutral-700"
+                    }`}
+                  >
+                    <RectangleHorizontal className="h-3.5 w-3.5" />
+                    Liggende
+                  </button>
+                  <button
+                    onClick={() => setOrientation("portrait")}
+                    title="Stående (A4)"
+                    className={`inline-flex h-7 items-center gap-1 border-l border-neutral-200 px-2.5 text-xs font-medium transition ${
+                      orientation === "portrait"
+                        ? "bg-neutral-900 text-white"
+                        : "text-neutral-500 hover:bg-neutral-50 hover:text-neutral-700"
+                    }`}
+                  >
+                    <RectangleVertical className="h-3.5 w-3.5" />
+                    Stående
+                  </button>
+                </div>
 
                 {/* Reset widths */}
                 <button
