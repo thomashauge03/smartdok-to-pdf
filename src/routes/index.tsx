@@ -230,15 +230,13 @@ function Index() {
 
       {/* ── Header ── */}
       <header className="sticky top-0 z-40 border-b-4 border-red-600" style={{ background: "#1a1a1a" }}>
-        <div className="mx-auto flex max-w-full items-center justify-between px-6 py-3">
-          <div className="flex items-center gap-3">
-            <HMLogo />
-            <div className="leading-tight">
-              <p className="text-sm font-bold tracking-tight text-white">Timeliste → PDF</p>
-              <p className="text-[11px] text-neutral-400">Hauge Maskin AS</p>
-            </div>
+        <div className="mx-auto flex max-w-full items-center gap-4 px-6 py-3">
+          <img src={logoAsset.url} alt="Hauge Maskin" className="h-10 w-auto brightness-0 invert" />
+          <div className="h-6 w-px bg-neutral-700" />
+          <div className="leading-tight">
+            <p className="text-sm font-bold tracking-tight text-white">Timeliste → PDF</p>
+            <p className="text-[11px] text-neutral-400">SmartDok-eksport</p>
           </div>
-          <img src={logoAsset.url} alt="HM" className="h-10 w-auto brightness-0 invert" />
         </div>
       </header>
 
