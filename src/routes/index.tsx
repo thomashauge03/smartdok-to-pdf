@@ -480,7 +480,7 @@ function Index() {
                     {visibleColList.map((c) => (
                       <th
                         key={c.key}
-                        className="group/th relative border-b border-neutral-200 px-2.5 py-2.5 font-semibold text-xs text-neutral-600"
+                        className="group/th relative border-b border-r border-neutral-200 px-2.5 py-2.5 font-semibold text-xs text-neutral-600 last:border-r-0"
                       >
                         <div className="flex items-center gap-1">
                           <span className="truncate">{c.label}</span>
@@ -570,7 +570,7 @@ function Index() {
                   </tr>
                 </thead>
 
-                <tbody ref={tbodyRef} className="divide-y divide-neutral-100">
+                <tbody ref={tbodyRef} className="divide-y divide-neutral-200">
                   {visibleRows.length === 0 ? (
                     <tr>
                       <td
@@ -587,7 +587,7 @@ function Index() {
                       return (
                         <tr key={i} className="group/row transition-colors hover:bg-neutral-50/80">
                           {visibleColList.map((c) => (
-                            <td key={c.key} className="p-0 align-top">
+                            <td key={c.key} className="border-r border-neutral-200 p-0 align-top last:border-r-0">
                               <textarea
                                 value={r[c.key] ?? ""}
                                 onChange={(e) => updateCell(i, c.key, e.target.value)}
@@ -619,17 +619,17 @@ function Index() {
                         const firstSumIdx = visibleColList.findIndex((x) => x.sum);
                         if (c.sum)
                           return (
-                            <td key={c.key} className="px-2.5 py-2.5 text-right text-xs font-bold text-neutral-900 tabular-nums">
+                            <td key={c.key} className="border-r border-neutral-200 px-2.5 py-2.5 text-right text-xs font-bold text-neutral-900 tabular-nums last:border-r-0">
                               {fmtSumNum(sumCol(visibleRows, c.key))}
                             </td>
                           );
                         if (idx === firstSumIdx - 1)
                           return (
-                            <td key={c.key} className="px-2.5 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
+                            <td key={c.key} className="border-r border-neutral-200 px-2.5 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
                               Sum
                             </td>
                           );
-                        return <td key={c.key} />;
+                        return <td key={c.key} className="border-r border-neutral-200 last:border-r-0" />;
                       })}
                       <td />
                     </tr>
