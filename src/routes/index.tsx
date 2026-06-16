@@ -233,7 +233,7 @@ function Index() {
 
       {/* ── Header ── */}
       <header className="sticky top-0 z-40 border-b border-neutral-200/80 bg-white/95 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3">
+        <div className="mx-auto flex max-w-full items-center justify-between px-6 py-3">
 
           {/* Brand */}
           <div className="flex items-center gap-3">
@@ -272,7 +272,7 @@ function Index() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl space-y-5 px-6 py-8">
+      <main className="mx-auto max-w-full space-y-5 px-6 py-8">
 
         {/* ── Drop zone ── */}
         <label
@@ -465,8 +465,8 @@ function Index() {
             {/* Table */}
             <div className="overflow-x-auto">
               <table
-                className="text-xs"
-                style={{ tableLayout: "fixed", width: tableWidth, minWidth: "100%" }}
+                className="w-full text-xs"
+                style={{ tableLayout: "fixed", minWidth: tableWidth }}
               >
                 <colgroup>
                   {visibleColList.map((c) => (
@@ -475,12 +475,12 @@ function Index() {
                   <col style={{ width: 40 }} />
                 </colgroup>
 
-                <thead className="sticky top-[57px] z-10 bg-neutral-50 text-left">
+                <thead className="bg-neutral-50 text-left">
                   <tr>
                     {visibleColList.map((c) => (
                       <th
                         key={c.key}
-                        className="group/th relative border-b border-neutral-200 px-2.5 py-2.5 font-semibold text-[11px] uppercase tracking-wide text-neutral-500"
+                        className="group/th relative border-b border-neutral-200 px-2.5 py-2.5 font-semibold text-xs text-neutral-600"
                       >
                         <div className="flex items-center gap-1">
                           <span className="truncate">{c.label}</span>
