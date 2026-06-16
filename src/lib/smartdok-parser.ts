@@ -139,9 +139,16 @@ export async function parseSmartdok(file: File): Promise<Parsed> {
     throw new Error("Fant ikke 'Dato'-kolonne. Sjekk at filen er fra SmartDok.");
   }
 
-  // Columns to expose (skip Pro.navn — only used for prosjekt)
+  // Headers that are always hidden from the table (project meta shown in fields above)
+  const HIDDEN_HEADERS = new Set([
+    "pro.navn", "prosjektnavn", "prosjektnr", "prosjekt nr", "prosjekt navn",
+    "pro.nr", "pro nr",
+  ]);
+
+  // Columns to expose (skip Pro.navn and other project-meta columns)
   const columns: ColMeta[] = rawHeaders
     .filter((_, i) => i !== proNavnIdx)
+    .filter((h) => !HIDDEN_HEADERS.has(h.trim().toLowerCase()))
     .map((h) => buildColMeta(h));
 
   // Deduplicate keys (e.g. two columns both called "Timer")
@@ -174,7 +181,7 @@ export async function parseSmartdok(file: File): Promise<Parsed> {
     const row: Row = {};
     let colPointer = 0;
     for (let ci = 0; ci < rawHeaders.length; ci++) {
-      if (ci === proNavnIdx) continue;
+      if (ci === proNavnIdx || HIDDEN_HEADERS.has(rawHeaders[ci].trim().toLowerCase())) continue;
       const col = columns[colPointer];
       if (!col) { colPointer++; continue; }
 
