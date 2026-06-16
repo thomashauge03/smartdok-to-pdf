@@ -221,7 +221,7 @@ export async function parseSmartdok(file: File): Promise<Parsed> {
   const populatedCols = columns
     .filter((c) => rows.some((r) => {
       const v = (r[c.key] ?? "").toString().trim();
-      return v !== "" && v !== "0";
+      return v !== "" && v !== "0" && v.toLowerCase() !== "x";
     }))
     .map((c) => c.key);
 
