@@ -64,7 +64,7 @@ function buildColMeta(rawHeader: string): ColMeta {
   // Machine timer columns: "Maskin1 Timer", "Maskin2 Timer", …
   const maskinTimerM = norm.match(/^maskin(\d+)\s+timer$/);
   if (maskinTimerM) {
-    return { key, label: `Timer (M${maskinTimerM[1]})`, sum: true, align: "right", defaultWidth: 68, pdfWidth: 14 };
+    return { key, label: `Maskintimer${maskinTimerM[1]}`, sum: true, align: "right", defaultWidth: 90, pdfWidth: 18 };
   }
 
   // Fallback: use the raw header as label
