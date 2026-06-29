@@ -33,6 +33,7 @@ const HEADER_CONFIG: Record<string, Omit<ColMeta, "key">> = {
   "kommentar":              { label: "Kommentar",                                            defaultWidth: 300, pdfWidth: 64 },
   "pris mot kunde":         { label: "Pris mot kunde",        align: "right",                defaultWidth: 95,  pdfWidth: 20 },
   "timer":                  { label: "Timer",                 sum: true,  align: "right",    defaultWidth: 68,  pdfWidth: 14 },
+  "aer timer":              { label: "AER timer",             filter: true, sum: true, align: "right", defaultWidth: 80,  pdfWidth: 18 },
   "sum":                    { label: "Sum",                   sum: true,  align: "right",    defaultWidth: 68,  pdfWidth: 16 },
   "fakturert":              { label: "Fakturert",                                            defaultWidth: 68,  pdfWidth: 16 },
   "overtid 50%":            { label: "Overtid 50%",           sum: true,  align: "right",    defaultWidth: 80,  pdfWidth: 18 },
