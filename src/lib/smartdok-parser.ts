@@ -10,7 +10,6 @@ export type ColMeta = {
   sum?: boolean;
   align?: "right";
   defaultWidth: number;
-  pdfWidth: number;
 };
 
 export type Row = Record<string, string>;
@@ -25,22 +24,22 @@ export type Parsed = {
 
 // Known header → ColMeta config (key = normalized lowercase header)
 const HEADER_CONFIG: Record<string, Omit<ColMeta, "key">> = {
-  "dato":                   { label: "Dato",                  sort: true,                    defaultWidth: 90,  pdfWidth: 22 },
-  "tid":                    { label: "Tid",                                                  defaultWidth: 70,  pdfWidth: 18 },
-  "navn":                   { label: "Navn",                  filter: true,                  defaultWidth: 140, pdfWidth: 32 },
-  "aktivitet":              { label: "Aktivitet",             filter: true,                  defaultWidth: 130, pdfWidth: 28 },
-  "lønnsart":               { label: "Lønnsart",              filter: true,                  defaultWidth: 120, pdfWidth: 26 },
-  "kommentar":              { label: "Kommentar",                                            defaultWidth: 300, pdfWidth: 64 },
-  "pris mot kunde":         { label: "Pris mot kunde",        align: "right",                defaultWidth: 95,  pdfWidth: 20 },
-  "timer":                  { label: "Timer",                 sum: true,  align: "right",    defaultWidth: 68,  pdfWidth: 14 },
-  "aer timer":              { label: "AER timer",             filter: true, sum: true, align: "right", defaultWidth: 80,  pdfWidth: 18 },
-  "sum":                    { label: "Sum",                   sum: true,  align: "right",    defaultWidth: 68,  pdfWidth: 16 },
-  "fakturert":              { label: "Fakturert",                                            defaultWidth: 68,  pdfWidth: 16 },
-  "overtid 50%":            { label: "Overtid 50%",           sum: true,  align: "right",    defaultWidth: 80,  pdfWidth: 18 },
-  "overtid 100%":           { label: "Overtid 100%",          sum: true,  align: "right",    defaultWidth: 80,  pdfWidth: 18 },
-  "overtid 70%":            { label: "Overtid 70%",           sum: true,  align: "right",    defaultWidth: 80,  pdfWidth: 18 },
-  "tillegg tunnelarbeid":   { label: "Tillegg tunnelarbeid",  sum: true,  align: "right",    defaultWidth: 120, pdfWidth: 26 },
-  "natttillegg":            { label: "Natttillegg",           sum: true,  align: "right",    defaultWidth: 80,  pdfWidth: 20 },
+  "dato":                   { label: "Dato",                  sort: true,                    defaultWidth: 90 },
+  "tid":                    { label: "Tid",                                                  defaultWidth: 70 },
+  "navn":                   { label: "Navn",                  filter: true,                  defaultWidth: 140 },
+  "aktivitet":              { label: "Aktivitet",             filter: true,                  defaultWidth: 130 },
+  "lønnsart":               { label: "Lønnsart",              filter: true,                  defaultWidth: 120 },
+  "kommentar":              { label: "Kommentar",                                            defaultWidth: 300 },
+  "pris mot kunde":         { label: "Pris mot kunde",        align: "right",                defaultWidth: 95 },
+  "timer":                  { label: "Timer",                 sum: true,  align: "right",    defaultWidth: 68 },
+  "aer timer":              { label: "AER timer",             filter: true, sum: true, align: "right", defaultWidth: 80 },
+  "sum":                    { label: "Sum",                   sum: true,  align: "right",    defaultWidth: 68 },
+  "fakturert":              { label: "Fakturert",                                            defaultWidth: 68 },
+  "overtid 50%":            { label: "Overtid 50%",           sum: true,  align: "right",    defaultWidth: 80 },
+  "overtid 100%":           { label: "Overtid 100%",          sum: true,  align: "right",    defaultWidth: 80 },
+  "overtid 70%":            { label: "Overtid 70%",           sum: true,  align: "right",    defaultWidth: 80 },
+  "tillegg tunnelarbeid":   { label: "Tillegg tunnelarbeid",  sum: true,  align: "right",    defaultWidth: 120 },
+  "natttillegg":            { label: "Natttillegg",           sum: true,  align: "right",    defaultWidth: 80 },
 };
 
 function headerToKey(raw: string): string {
@@ -59,17 +58,17 @@ function buildColMeta(rawHeader: string): ColMeta {
   // Machine name columns: "Maskinnavn1", "Maskinnavn2", …
   const maskinNavnM = norm.match(/^maskinnavn(\d+)$/);
   if (maskinNavnM) {
-    return { key, label: `Maskinnavn${maskinNavnM[1]}`, filter: true, defaultWidth: 130, pdfWidth: 30 };
+    return { key, label: `Maskinnavn${maskinNavnM[1]}`, filter: true, defaultWidth: 130 };
   }
 
   // Machine timer columns: "Maskin1 Timer", "Maskin2 Timer", …
   const maskinTimerM = norm.match(/^maskin(\d+)\s+timer$/);
   if (maskinTimerM) {
-    return { key, label: `Maskintimer${maskinTimerM[1]}`, sum: true, align: "right", defaultWidth: 90, pdfWidth: 18 };
+    return { key, label: `Maskintimer${maskinTimerM[1]}`, sum: true, align: "right", defaultWidth: 90 };
   }
 
   // Fallback: use the raw header as label
-  return { key, label: rawHeader.trim(), defaultWidth: 100, pdfWidth: 22 };
+  return { key, label: rawHeader.trim(), defaultWidth: 100 };
 }
 
 const MAANEDER = [
