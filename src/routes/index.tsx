@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   Trash2,
   Plus,
@@ -208,16 +208,6 @@ function Index() {
       setBusy(false);
     }
   };
-
-  const tbodyRef = useRef<HTMLTableSectionElement>(null);
-  useEffect(() => {
-    if (!tbodyRef.current) return;
-    tbodyRef.current.querySelectorAll("textarea").forEach((ta) => {
-      const el = ta as HTMLTextAreaElement;
-      el.style.height = "auto";
-      el.style.height = el.scrollHeight + "px";
-    });
-  });
 
   const resetWidths = () =>
     setColWidths(Object.fromEntries(columns.map((c) => [c.key, c.defaultWidth])));
@@ -547,14 +537,30 @@ function Index() {
                               className="p-0 align-top"
                               style={{ borderRight: "1px solid #d4d4d4" }}
                             >
-                              <textarea
-                                value={r[c.key] ?? ""}
-                                onChange={(e) => updateCell(i, c.key, e.target.value)}
-                                rows={1}
-                                className={`block w-full resize-none overflow-hidden whitespace-pre-wrap break-words border-0 bg-transparent px-2.5 py-2 text-xs leading-relaxed text-neutral-800 outline-none transition-colors focus:bg-red-50 focus:ring-1 focus:ring-inset focus:ring-red-400 ${
-                                  c.align === "right" ? "text-right" : ""
-                                }`}
-                              />
+                              {/*
+                                The invisible twin below wraps exactly like the
+                                textarea and sets the cell height, so long values
+                                grow the row instead of being clipped. Keep the
+                                two class lists in sync.
+                              */}
+                              <div className="grid">
+                                <div
+                                  aria-hidden
+                                  className={`invisible col-start-1 row-start-1 whitespace-pre-wrap break-words px-2.5 py-2 text-xs leading-relaxed ${
+                                    c.align === "right" ? "text-right" : ""
+                                  }`}
+                                >
+                                  {(r[c.key] ?? "") + " "}
+                                </div>
+                                <textarea
+                                  value={r[c.key] ?? ""}
+                                  onChange={(e) => updateCell(i, c.key, e.target.value)}
+                                  rows={1}
+                                  className={`col-start-1 row-start-1 h-full w-full resize-none overflow-hidden whitespace-pre-wrap break-words border-0 bg-transparent px-2.5 py-2 text-xs leading-relaxed text-neutral-800 outline-none transition-colors focus:bg-red-50 focus:ring-1 focus:ring-inset focus:ring-red-400 ${
+                                    c.align === "right" ? "text-right" : ""
+                                  }`}
+                                />
+                              </div>
                             </td>
                           ))}
                           <td className="px-1.5 py-1.5 text-right align-top">
