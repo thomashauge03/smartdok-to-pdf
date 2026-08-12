@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Trash2,
   Plus,
@@ -75,6 +75,23 @@ function Index() {
 
   const resizing = useRef<{ key: ColKey; startX: number; startW: number } | null>(null);
 
+  // Index of the row just added via "Legg til rad" — scrolled to, focused and
+  // highlighted so it is obvious where it landed, then cleared.
+  const [justAdded, setJustAdded] = useState<number | null>(null);
+  const newRowRef = useRef<HTMLTableRowElement>(null);
+  // Indices into parsed.rows of rows added by hand, which stay visible even
+  // when they do not match the active filter. Rows are only ever appended or
+  // removed, never reordered, so indices are stable apart from deletion.
+  const [addedRows, setAddedRows] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    if (justAdded === null) return;
+    newRowRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    newRowRef.current?.querySelector("textarea")?.focus();
+    const t = setTimeout(() => setJustAdded(null), 2500);
+    return () => clearTimeout(t);
+  }, [justAdded]);
+
   const columns: ColMeta[] = parsed?.columns ?? [];
   const filterCols = columns.filter((c) => c.filter).map((c) => c.key);
   const activeFilterCount = filterCols.filter((k) => (filters[k]?.size ?? 0) > 0).length;
@@ -127,15 +144,20 @@ function Index() {
 
   const visibleRows = useMemo(() => {
     if (!parsed) return [] as Row[];
-    const filtered = parsed.rows.filter((r) =>
-      filterCols.every((k) => (filters[k]?.size ?? 0) === 0 || filters[k].has(r[k] ?? "")),
+    // Rows you just added stay visible even where they are still blank, so a
+    // new row never disappears while you are filling it in. Changing a filter
+    // drops the exemption and applies the filter to everything again.
+    const filtered = parsed.rows.filter(
+      (r, idx) =>
+        addedRows.has(idx) ||
+        filterCols.every((k) => (filters[k]?.size ?? 0) === 0 || filters[k].has(r[k] ?? "")),
     );
     if (dateSort === "none" || !datoKey) return filtered;
     const sorted = [...filtered].sort(
       (a, b) => parseDato(a[datoKey] ?? "") - parseDato(b[datoKey] ?? ""),
     );
     return dateSort === "desc" ? sorted.reverse() : sorted;
-  }, [parsed, filters, filterCols, dateSort, datoKey]);
+  }, [parsed, filters, filterCols, dateSort, datoKey, addedRows]);
 
   const timerSum = useMemo(() => {
     const col = columns.find((c) => c.key === "timer");
@@ -143,14 +165,17 @@ function Index() {
   }, [visibleRows, columns]);
 
   const toggleFilter = (col: ColKey, val: string) => {
+    setAddedRows(new Set());
     setFilters((f) => {
       const next = new Set(f[col] ?? []);
       next.has(val) ? next.delete(val) : next.add(val);
       return { ...f, [col]: next };
     });
   };
-  const clearFilter = (col: ColKey) =>
+  const clearFilter = (col: ColKey) => {
+    setAddedRows(new Set());
     setFilters((f) => ({ ...f, [col]: new Set() }));
+  };
 
   const toggleColumn = (col: ColKey) =>
     setVisibleCols((s) => {
@@ -165,15 +190,37 @@ function Index() {
       return { ...p, rows: p.rows.map((r, idx) => (idx === i ? { ...r, [key]: value } : r)) };
     });
 
-  const deleteRow = (i: number) =>
-    setParsed((p) => (p ? { ...p, rows: p.rows.filter((_, idx) => idx !== i) } : p));
-
-  const addRow = () =>
-    setParsed((p) => {
-      if (!p) return p;
-      const empty = Object.fromEntries(p.columns.map((c) => [c.key, ""])) as Row;
-      return { ...p, rows: [...p.rows, empty] };
+  const deleteRow = (i: number) => {
+    // Deleting shifts every later index down by one, so both the highlight and
+    // the exemption set have to follow.
+    setJustAdded(null);
+    setAddedRows((s) => {
+      const next = new Set<number>();
+      for (const idx of s) {
+        if (idx !== i) next.add(idx > i ? idx - 1 : idx);
+      }
+      return next;
     });
+    setParsed((p) => (p ? { ...p, rows: p.rows.filter((_, idx) => idx !== i) } : p));
+  };
+
+  const addRow = () => {
+    if (!parsed) return;
+    const row = Object.fromEntries(parsed.columns.map((c) => [c.key, ""])) as Row;
+    // Where a filter narrows a column to a single value, that value is the only
+    // one the row could have, so fill it in. With several values picked there is
+    // nothing to infer — leave it blank for the user to choose.
+    // Never seed a sum column: a blank row must not move a total. "AER timer"
+    // is both filterable and summed, and inheriting its value would silently
+    // add hours to the table footer and the PDF.
+    for (const c of parsed.columns) {
+      const picked = filters[c.key];
+      if (c.filter && !c.sum && picked?.size === 1) row[c.key] = [...picked][0];
+    }
+    setParsed({ ...parsed, rows: [...parsed.rows, row] });
+    setAddedRows((s) => new Set(s).add(parsed.rows.length));
+    setJustAdded(parsed.rows.length);
+  };
 
   const handleFile = useCallback(async (file: File) => {
     setError(null);
@@ -185,6 +232,8 @@ function Index() {
       setVedlegg(p.vedlegg);
       setFilename(file.name.replace(/\.[^.]+$/, ""));
       setDateSort("none");
+      setJustAdded(null);
+      setAddedRows(new Set());
       setVisibleCols(new Set(p.populatedCols));
       setFilters(Object.fromEntries(p.columns.filter((c) => c.filter).map((c) => [c.key, new Set<string>()])));
       setColWidths(Object.fromEntries(p.columns.map((c) => [c.key, c.defaultWidth])));
@@ -520,16 +569,19 @@ function Index() {
                     visibleRows.map((r, rowIdx) => {
                       const i = parsed.rows.indexOf(r);
                       const isEven = rowIdx % 2 === 0;
+                      const isNew = i === justAdded;
+                      const bg = isNew ? "#fff7d6" : isEven ? "#ffffff" : "#f9f9f9";
                       return (
                         <tr
                           key={i}
+                          ref={isNew ? newRowRef : undefined}
                           className="group/row"
                           style={{
-                            background: isEven ? "#ffffff" : "#f9f9f9",
+                            background: bg,
                             borderBottom: "1px solid #d4d4d4",
                           }}
                           onMouseEnter={(e) => (e.currentTarget.style.background = "#fff1f1")}
-                          onMouseLeave={(e) => (e.currentTarget.style.background = isEven ? "#ffffff" : "#f9f9f9")}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = bg)}
                         >
                           {visibleColList.map((c) => (
                             <td
