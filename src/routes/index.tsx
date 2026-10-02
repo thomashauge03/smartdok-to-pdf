@@ -28,7 +28,6 @@ import {
 import { generatePdf, pdfFilename, type PdfOrientation } from "@/lib/smartdok-pdf";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
-import logoAsset from "@/assets/hmLogo.png.asset.json";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -271,7 +270,7 @@ function Index() {
       <header className="sticky top-0 z-40 border-b-4 border-red-600" style={{ background: "#1a1a1a" }}>
         <div className="mx-auto flex max-w-full items-center gap-4 px-6 py-3">
           <div className="rounded-lg bg-white px-2 py-1">
-            <img src={logoAsset.url} alt="Hauge Maskin" className="h-8 w-auto" />
+            <img src="/hmLogo.png" alt="Hauge Maskin" className="h-8 w-auto" />
           </div>
           <div className="h-6 w-px bg-neutral-700" />
           <div className="leading-tight">

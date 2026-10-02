@@ -3,7 +3,6 @@ import autoTable from "jspdf-autotable";
 import type { ColMeta, Row } from "./smartdok-parser";
 import { fmtSumNum, sumCol } from "./smartdok-parser";
 import { computeColumnWidths, type TextMeasurer } from "./pdf-layout";
-import logoAsset from "@/assets/hmLogo.png.asset.json";
 
 export type PdfOrientation = "landscape" | "portrait";
 
@@ -12,7 +11,7 @@ const FONT_SIZE = 8;
 const CELL_PADDING = 1.5; // mm, per side
 
 async function loadLogo(): Promise<string> {
-  const res = await fetch(logoAsset.url);
+  const res = await fetch("/hmLogo.png"); // public/hmLogo.png
   const blob = await res.blob();
   return await new Promise((resolve, reject) => {
     const r = new FileReader();
