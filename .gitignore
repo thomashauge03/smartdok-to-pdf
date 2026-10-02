@@ -20,6 +20,10 @@ dist-ssr
 .wrangler/
 .dev.vars
 
+# Vercel: lenkinga (vercel link), Build Output fra nitro og miljøfilene
+.vercel
+.env*
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
