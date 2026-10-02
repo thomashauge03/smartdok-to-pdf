@@ -11,6 +11,8 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { Lukkar } from "@/components/Lukkar";
+import { Nokkelknapp } from "@/components/Nokkelknapp";
 
 function NotFoundComponent() {
   return (
@@ -105,11 +107,21 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html
+      lang="en"
+      /* Lukkeren setter data-hm-lukkar på <html> før React tar over sida.
+         Uten denne regnes attributtet som et avvik. Gjelder bare <html>
+         selv, ikke det som ligger inni. */
+      suppressHydrationWarning
+    >
       <head>
         <HeadContent />
       </head>
       <body>
+        {/* Først i body, så platene er malt før noe annet rekker å vises. */}
+        <Lukkar />
+        {/* Rett etter lukkeren: nøkkelknappen må ligge i HTML-en serveren sender. */}
+        <Nokkelknapp />
         {children}
         <Scripts />
       </body>
