@@ -14,6 +14,7 @@ import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { Lukkar } from "@/components/Lukkar";
 import { Nokkelknapp } from "@/components/Nokkelknapp";
+import { Hjemlogo } from "@/components/Hjemlogo";
 
 function NotFoundComponent() {
   return (
@@ -123,6 +124,8 @@ function RootShell({ children }: { children: ReactNode }) {
         <Lukkar />
         {/* Rett etter lukkeren: nøkkelknappen må ligge i HTML-en serveren sender. */}
         <Nokkelknapp />
+        {/* Etter nøkkelknappen: HM-logoen tar deg tilbake til appen når appen åpnet sida. */}
+        <Hjemlogo />
         {children}
         <Scripts />
       </body>
