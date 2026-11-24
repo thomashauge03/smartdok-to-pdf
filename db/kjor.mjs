@@ -20,6 +20,7 @@ for (const navn of filer) {
   process.stdout.write(`${navn} ... `)
   try {
     const innhold = fs.readFileSync(path.join(mappe, navn), 'utf8')
+    // Filene må ikke ha egen begin/commit: kjøreren pakker hver fil i én transaksjon.
     await sql(`begin;\n${innhold}\ncommit;`)
     console.log('ok')
   } catch (e) {
