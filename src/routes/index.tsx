@@ -29,6 +29,7 @@ import {
 } from "@/lib/smartdok-parser";
 import { generatePdf, pdfFilename, type PdfOrientation } from "@/lib/smartdok-pdf";
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { HentFraSmartdok } from "@/components/HentFraSmartdok";
 import { Checkbox } from "@/components/ui/checkbox";
 
 export const Route = createFileRoute("/")({
@@ -237,28 +238,39 @@ function Index() {
     setJustAdded(parsed.rows.length);
   };
 
+  const visTabell = useCallback((p: Parsed, filnavn: string) => {
+    setParsed(p);
+    setProsjekt(p.prosjekt);
+    setVedlegg(p.vedlegg);
+    setFilename(filnavn);
+    setDateSort("none");
+    setJustAdded(null);
+    setAddedRows(new Set());
+    setVisibleCols(new Set(p.populatedCols));
+    setFilters(Object.fromEntries(p.columns.filter((c) => c.filter).map((c) => [c.key, new Set<string>()])));
+    setColWidths(Object.fromEntries(p.columns.map((c) => [c.key, c.defaultWidth])));
+  }, []);
+
   const handleFile = useCallback(async (file: File) => {
     setError(null);
     setBusy(true);
     try {
       const p = await parseSmartdok(file);
-      setParsed(p);
-      setProsjekt(p.prosjekt);
-      setVedlegg(p.vedlegg);
-      setFilename(file.name.replace(/\.[^.]+$/, ""));
-      setDateSort("none");
-      setJustAdded(null);
-      setAddedRows(new Set());
-      setVisibleCols(new Set(p.populatedCols));
-      setFilters(Object.fromEntries(p.columns.filter((c) => c.filter).map((c) => [c.key, new Set<string>()])));
-      setColWidths(Object.fromEntries(p.columns.map((c) => [c.key, c.defaultWidth])));
+      visTabell(p, file.name.replace(/\.[^.]+$/, ""));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setParsed(null);
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [visTabell]);
+
+  const onHentet = useCallback((p: Parsed) => {
+    setError(null);
+    visTabell(p, `smartdok-${p.prosjekt.split(" ")[0]}`);
+    const key = p.columns.find((c) => c.label === "Fakturert")?.key;
+    if (key) setFilters((f) => ({ ...f, [key]: new Set(["Nei"]) }));
+  }, [visTabell]);
 
   const onDownload = async () => {
     if (!parsed) return;
@@ -370,6 +382,8 @@ function Index() {
             )}
           </div>
         </label>
+
+        <HentFraSmartdok onHentet={onHentet} harTabell={parsed !== null} />
 
         {/* ── Error ── */}
         {error && (
