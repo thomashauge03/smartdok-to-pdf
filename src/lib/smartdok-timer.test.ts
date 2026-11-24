@@ -174,3 +174,23 @@ test("rad uten tid kommer først på datoen", () => {
   ], prosjekt, periode);
   assert.deepEqual(t.rows.map((r) => r["navn"]), ["B", "A"]);
 });
+
+test("Fakturert og Underprosjekt er filtrerbare, og Fakturert starter skjult", () => {
+  const t = byggTabell([arbeid({ id: 1, underprosjekt: "Del A" })], prosjekt, periode);
+  const kol = (l: string) => t.columns.find((c) => c.label === l)!;
+  assert.equal(kol("Fakturert").filter, true);
+  assert.equal(kol("Underprosjekt").filter, true);
+  assert.equal(t.fakturertKey, kol("Fakturert").key);
+  assert.ok(!t.populatedCols.includes(t.fakturertKey!));
+});
+
+test("fakturertKey er basiskolonnen selv om et tillegg heter «Fakturert»", () => {
+  const t = byggTabell([arbeid({ id: 1 }), tillegg({ id: 1, lonnsart: "Fakturert" })], prosjekt, periode);
+  const alle = t.columns.filter((c) => c.label === "Fakturert");
+  assert.equal(alle.length, 2);
+  const tilleggKol = alle.find((c) => c.sum)!;
+  assert.notEqual(t.fakturertKey, tilleggKol.key);
+  assert.equal(t.columns.find((c) => c.key === t.fakturertKey)!.sum, undefined);
+  assert.equal(t.columns.find((c) => c.key === t.fakturertKey)!.filter, true);
+  assert.ok(!t.columns.find((c) => c.key === tilleggKol.key)!.filter);
+});

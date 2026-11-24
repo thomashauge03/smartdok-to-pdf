@@ -268,8 +268,10 @@ function Index() {
   const onHentet = useCallback((p: Parsed, nummer: string) => {
     setError(null);
     visTabell(p, `smartdok-${nummer}`);
-    const key = p.columns.find((c) => c.label === "Fakturert")?.key;
-    if (key) setFilters((f) => ({ ...f, [key]: new Set(["Nei"]) }));
+    // «Delvis»-rader har ufakturerte timer, så de skal være med. Filteret gjelder alle filterkolonner,
+    // også når Fakturert-kolonnen er skjult.
+    const key = p.fakturertKey;
+    if (key) setFilters((f) => ({ ...f, [key]: new Set(["Nei", "Delvis"]) }));
   }, [visTabell]);
 
   const onDownload = async () => {

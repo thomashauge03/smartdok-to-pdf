@@ -12,4 +12,9 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  // Vercel-preset: hentTimer venter opptil 110 s på adminbordet, og standardgrensa er 10-15 s.
+  // Leses bare når nitro bygger for Vercel (VERCEL=1); lokalt bygg mot cloudflare ignorerer den.
+  // Wrapperens type for `nitro` kjenner bare preset/output/cloudflare, men objektet spres uendret inn i
+  // nitro() (dist/index.js: `{ defaultPreset, ...userNitroOpts }`), så vercel-nøkkelen når fram.
+  nitro: { vercel: { functions: { maxDuration: 120 } } } as { preset?: string },
 });

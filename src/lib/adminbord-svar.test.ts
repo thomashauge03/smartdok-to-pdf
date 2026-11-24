@@ -22,6 +22,12 @@ test("mangler tekst gir generell feil", () => {
   assert.deepEqual(feilSvar(500, "  "), { ok: false, feil: GENERELL_FEIL });
 });
 
+test("504 gir tidsavbruddmelding, også når adminbordet sender tekst", () => {
+  const forventet = { ok: false, feil: "Hentingen tok for lang tid. Prøv en kortere periode." };
+  assert.deepEqual(feilSvar(504, null), forventet);
+  assert.deepEqual(feilSvar(504, "noe annet"), forventet);
+});
+
 test("adminbord-URL må være https, eller http mot localhost", () => {
   assert.equal(normaliserAdminbordUrl("https://a.no/"), "https://a.no");
   assert.equal(normaliserAdminbordUrl("http://localhost:3000"), "http://localhost:3000");

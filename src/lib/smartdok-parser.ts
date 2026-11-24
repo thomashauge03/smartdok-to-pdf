@@ -20,6 +20,8 @@ export type Parsed = {
   prosjekt: string;
   vedlegg: string;
   populatedCols: ColKey[];
+  // Nøkkelen til basiskolonnen «Fakturert» (satt av byggTabell).
+  fakturertKey?: ColKey;
 };
 
 // Known header → ColMeta config (key = normalized lowercase header)

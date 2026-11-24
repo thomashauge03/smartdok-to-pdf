@@ -4,12 +4,14 @@ export type Feil = { ok: false; feil: string; loggInn?: true };
 
 export const UTLOGGET: Feil = { ok: false, feil: "Du er logget ut. Logg inn på nytt.", loggInn: true };
 export const GENERELL_FEIL = "Fikk ikke kontakt med adminbordet.";
+export const TIDSAVBRUDD = "Hentingen tok for lang tid. Prøv en kortere periode.";
 export const IKKE_SATT_OPP = "Henting fra SmartDok er ikke satt opp.";
 
 // Ren hjelper: oversetter en feilstatus fra adminbordet til et Svar.
 export function feilSvar(status: number, adminbordFeil: string | null): Feil {
   if (status === 401) return UTLOGGET;
   if (status === 403) return { ok: false, feil: feilmelding("ingen-tilgang") };
+  if (status === 504) return { ok: false, feil: TIDSAVBRUDD };
   const tekst = adminbordFeil?.trim().slice(0, 300);
   return { ok: false, feil: tekst || GENERELL_FEIL };
 }

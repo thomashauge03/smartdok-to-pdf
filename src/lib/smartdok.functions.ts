@@ -5,7 +5,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 import { feilmelding } from "./innlogging";
-import { feilSvar, GENERELL_FEIL, IKKE_SATT_OPP, normaliserAdminbordUrl, UTLOGGET } from "./adminbord-svar";
+import { feilSvar, GENERELL_FEIL, IKKE_SATT_OPP, TIDSAVBRUDD, normaliserAdminbordUrl, UTLOGGET } from "./adminbord-svar";
 import type { Feil } from "./adminbord-svar";
 import type { SmartdokTime } from "./smartdok-timer";
 
@@ -96,6 +96,7 @@ function skjemaFeil(error: z.ZodError): Feil {
 
 function uventet(e: unknown): Feil {
   console.error("Henting fra adminbordet feilet uventet:", e instanceof Error ? e.message : "ukjent feil");
+  if (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError")) return { ok: false, feil: TIDSAVBRUDD };
   return { ok: false, feil: GENERELL_FEIL };
 }
 

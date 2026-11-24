@@ -4,7 +4,7 @@ import { ChevronDown, ChevronUp, ChevronsUpDown, DownloadCloud } from "lucide-re
 import { hentProsjekter, hentTimer } from "@/lib/smartdok.functions";
 import { byggTabell } from "@/lib/smartdok-timer";
 import type { Parsed } from "@/lib/smartdok-parser";
-import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 
 type Prosjekt = { nummer: string; navn: string; kunde: string | null; aktiv: boolean };
@@ -94,7 +94,9 @@ export function HentFraSmartdok({
       }
       onHentet(byggTabell(svar.timer, { nummer: valgt.nummer, navn: valgt.navn }, { fra, til }), valgt.nummer);
     } catch (e) {
-      visFeil(e instanceof Error && e.message ? e.message : "Kunne ikke hente timer. Prøv igjen.");
+      // Transportfeil kan inneholde interne detaljer; vis en fast tekst og logg meldingen.
+      console.error("Henting av timer feilet:", e instanceof Error ? e.message : "ukjent feil");
+      visFeil("Noe gikk galt under hentingen. Prøv igjen.");
     } finally {
       setHenter(false);
     }
@@ -154,13 +156,14 @@ export function HentFraSmartdok({
                     <CommandList>
                       <CommandEmpty>{lasterProsjekter ? "Laster…" : "Ingen prosjekter funnet."}</CommandEmpty>
                       {(prosjekter ?? []).map((p) => (
-                        <PopoverClose asChild key={p.nummer}>
-                          <CommandItem
+                        <CommandItem
+                            key={p.nummer}
                             value={`${p.nummer} ${p.navn} ${p.kunde ?? ""}`}
                             onSelect={() => {
                               setValgt(p);
                               setFeil(null);
                               setLoggInn(false);
+                              setVelgerAapen(false);
                             }}
                           >
                             <span className="truncate">
@@ -169,7 +172,6 @@ export function HentFraSmartdok({
                               {!p.aktiv && <span className="ml-2 text-xs text-neutral-400">(inaktiv)</span>}
                             </span>
                           </CommandItem>
-                        </PopoverClose>
                       ))}
                     </CommandList>
                   </Command>

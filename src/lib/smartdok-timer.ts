@@ -108,6 +108,11 @@ export function byggTabell(
     (o.tillegg ? tilleggNokkel : basisNokkel).set(o.raw, columns[i].key);
   });
   const nokkel = (raw: string) => basisNokkel.get(raw)!;
+  const fakturertKey = nokkel("Fakturert");
+  // Fakturert og Underprosjekt skal kunne filtreres (HEADER_CONFIG er delt med Excel-flyten og urørt).
+  columns.forEach((c, i) => {
+    if (!overskrifter[i].tillegg && (overskrifter[i].raw === "Fakturert" || overskrifter[i].raw === "Underprosjekt")) c.filter = true;
+  });
 
   const sortert = [...liste].sort((a, b) =>
     a.hoved.dato.localeCompare(b.hoved.dato) ||
@@ -153,6 +158,8 @@ export function byggTabell(
 
   // Samme definisjon av «utfylt» som i parseSmartdok.
   const populatedCols = columns
+    // Fakturert starter skjult, som i Excel-flyten; den kan slås på og filtreres likevel.
+    .filter((c) => c.key !== fakturertKey)
     .filter((c) => rows.some((r) => {
       const v = (r[c.key] ?? "").trim();
       return v !== "" && v !== "0" && v.toLowerCase() !== "x";
@@ -164,6 +171,7 @@ export function byggTabell(
     prosjekt: `${prosjekt.nummer} ${prosjekt.navn}`.trim(),
     vedlegg: vedleggFraMaaneder(maaneder),
     populatedCols,
+    fakturertKey,
   };
 }
 
