@@ -71,6 +71,7 @@ function HMLogo() {
 function Index() {
   const { epost } = Route.useRouteContext();
   const router = useRouter();
+  const [loggerUt, setLoggerUt] = useState(false);
   const [parsed, setParsed] = useState<Parsed | null>(null);
   const [prosjekt, setProsjekt] = useState("");
   const [vedlegg, setVedlegg] = useState("");
@@ -294,11 +295,18 @@ function Index() {
             <span className="text-xs text-neutral-400">{epost}</span>
             <button
               type="button"
+              disabled={loggerUt}
               onClick={async () => {
-                await loggUt();
-                await router.navigate({ to: "/logg-inn" });
+                setLoggerUt(true);
+                try {
+                  await loggUt();
+                } finally {
+                  // Navigerer uansett: overlever økta, sender /logg-inn oss rett tilbake hit.
+                  await router.navigate({ to: "/logg-inn" });
+                  setLoggerUt(false);
+                }
               }}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-600 bg-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-200 transition hover:border-neutral-500 hover:bg-neutral-700"
+              className="disabled:opacity-60inline-flex items-center gap-1.5 rounded-lg border border-neutral-600 bg-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-200 transition hover:border-neutral-500 hover:bg-neutral-700"
             >
               <LogOut className="h-3.5 w-3.5" />
               Logg ut
