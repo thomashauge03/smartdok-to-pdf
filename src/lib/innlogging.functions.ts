@@ -41,8 +41,9 @@ export const loggInn = createServerFn({ method: "POST" })
         if (error) return { ok: false, feil: "feil-passord" };
 
         if ((await harTilgang(supabase)) !== true) {
-          // Ellers blir en gyldig økt liggende igjen hos en bruker uten tilgang.
-          await supabase.auth.signOut();
+          // Lokalt omfang fjerner cookien før nettverkskallet, så den ikke blir
+          // liggende igjen hos en bruker uten tilgang hvis tilbakekallingen feiler.
+          await supabase.auth.signOut({ scope: "local" });
           return { ok: false, feil: "ingen-tilgang" };
         }
         return { ok: true };
@@ -55,5 +56,5 @@ export const loggInn = createServerFn({ method: "POST" })
 
 export const loggUt = createServerFn({ method: "POST" }).handler(async (): Promise<void> => {
   const { lagServerKlient } = await import("./supabase.server");
-  await lagServerKlient().auth.signOut();
+  await lagServerKlient().auth.signOut({ scope: "local" });
 });
