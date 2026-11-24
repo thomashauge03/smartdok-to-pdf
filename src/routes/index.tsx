@@ -26,7 +26,7 @@ import {
   type ColMeta,
 } from "@/lib/smartdok-parser";
 import { generatePdf, pdfFilename, type PdfOrientation } from "@/lib/smartdok-pdf";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 
 export const Route = createFileRoute("/")({
@@ -417,6 +417,9 @@ function Index() {
                         </label>
                       ))}
                     </div>
+                    <PopoverClose className="mt-2 w-full rounded-md bg-red-600 py-2 text-xs font-bold text-white transition hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500/40">
+                      Ferdig
+                    </PopoverClose>
                   </PopoverContent>
                 </Popover>
 
@@ -519,6 +522,9 @@ function Index() {
                                     </label>
                                   ))}
                                 </div>
+                                <PopoverClose className="mt-2 w-full rounded-md bg-red-600 py-2 text-xs font-bold text-white transition hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500/40">
+                                  Ferdig
+                                </PopoverClose>
                               </PopoverContent>
                             </Popover>
                           )}
