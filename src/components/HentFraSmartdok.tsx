@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { ChevronDown, ChevronUp, ChevronsUpDown, DownloadCloud } from "lucide-react";
+import { ChevronDown, ChevronsUpDown } from "lucide-react";
+import { SmartdokLogo } from "@/components/SmartdokLogo";
 import { hentProsjekter, hentTimer } from "@/lib/smartdok.functions";
 import { byggTabell } from "@/lib/smartdok-timer";
 import type { Parsed } from "@/lib/smartdok-parser";
@@ -103,32 +104,59 @@ export function HentFraSmartdok({
     }
   };
 
+  // SmartDoks egne farger (smartdok.no): gult #FFDC59 med grått #4A4A4A.
   const feltKlasse =
-    "w-full rounded-lg border-2 border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none transition focus:border-red-500 focus:ring-3 focus:ring-red-500/10";
-  const etikett = "mb-1.5 block text-[11px] font-bold uppercase tracking-widest text-neutral-500";
+    "w-full rounded-lg border-2 border-[#ecd27a] bg-white px-3 py-2 text-sm text-neutral-900 outline-none transition focus:border-[#4a4a4a] focus:ring-3 focus:ring-[#ffdc59]/60 disabled:opacity-60";
+  const etikett = "mb-1.5 block text-[11px] font-bold uppercase tracking-widest text-[#4a4a4a]/70";
 
   return (
-    <div className="overflow-hidden rounded-xl border border-neutral-300 bg-white shadow-sm">
+    <div
+      className={`group overflow-hidden rounded-xl border border-[#e6c24a] bg-[#ffdc59] transition duration-300 ease-out motion-reduce:transition-none ${
+        aapen
+          ? "shadow-[0_14px_32px_-16px_rgba(181,140,0,0.55)]"
+          : "shadow-sm hover:-translate-y-0.5 hover:shadow-[0_14px_28px_-14px_rgba(181,140,0,0.6)] motion-reduce:hover:translate-y-0"
+      }`}
+    >
       <button
         type="button"
         aria-expanded={aapen}
+        aria-controls="hent-fra-smartdok-innhold"
         onClick={() => {
           const ny = !aapen;
           setAapen(ny);
           if (ny) void lastProsjekter();
         }}
-        className="flex w-full items-center gap-3 px-6 py-4 text-left transition hover:bg-red-50/30"
+        className="relative flex w-full items-center gap-3 overflow-hidden px-4 py-4 text-left sm:gap-5 sm:px-6 text-[#4a4a4a] transition duration-200 hover:bg-[#f7d044] focus-visible:outline-2 focus-visible:-outline-offset-4 focus-visible:outline-[#4a4a4a] active:scale-[0.995] motion-reduce:active:scale-100"
       >
-        <DownloadCloud className="h-5 w-5 text-neutral-400" />
-        <span className="flex-1">
-          <span className="block text-sm font-semibold text-neutral-700">Hent fra SmartDok</span>
-          <span className="block text-xs text-neutral-400">Velg prosjekt og periode i stedet for å laste opp en fil</span>
+        {/* Lysskjæret glir én gang over det gule når musa kommer inn. */}
+        <span aria-hidden className="smartdok-skjaer pointer-events-none absolute inset-y-0 left-0 w-1/4 bg-gradient-to-r from-transparent via-white/45 to-transparent" />
+        <SmartdokLogo className="relative h-5 w-auto shrink-0 sm:h-6" />
+        <span aria-hidden className="relative hidden h-8 w-px bg-[#4a4a4a]/25 sm:block" />
+        <span className="relative min-w-0 flex-1">
+          <span className="block text-sm font-bold">Hent timer</span>
+          <span className="hidden text-xs text-[#4a4a4a]/75 sm:block">Velg prosjekt og periode i stedet for å laste opp en fil</span>
         </span>
-        {aapen ? <ChevronUp className="h-4 w-4 text-neutral-400" /> : <ChevronDown className="h-4 w-4 text-neutral-400" />}
+        <span
+          className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#4a4a4a] text-[#ffdc59] transition duration-300 group-hover:scale-110 motion-reduce:transition-none motion-reduce:group-hover:scale-100 ${
+            aapen ? "rotate-180" : ""
+          }`}
+        >
+          <ChevronDown className="h-4 w-4" />
+        </span>
+        {/* Gul og grå stripe langs kanten mens timene hentes. */}
+        {henter && <span aria-hidden className="smartdok-striper absolute inset-x-0 bottom-0 h-1" />}
       </button>
 
-      {aapen && (
-        <div className="space-y-4 border-t border-neutral-200 px-6 py-5">
+      {/* Folder seg ut og inn med høyden; inert når det er lukket, så Tab ikke havner i skjulte felt. */}
+      <div
+        id="hent-fra-smartdok-innhold"
+        inert={!aapen}
+        className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out motion-reduce:transition-none ${
+          aapen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+        }`}
+      >
+        <div className="overflow-hidden">
+        <div className="space-y-4 border-t border-[#e6c24a] bg-[#fff7d6] px-6 py-5">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-[2fr_1fr_1fr_auto] md:items-end">
             <div>
               <span id="hent-prosjekt-etikett" className={etikett}>Prosjekt</span>
@@ -206,7 +234,7 @@ export function HentFraSmartdok({
               type="button"
               disabled={henter || lasterProsjekter}
               onClick={() => void hent()}
-              className="rounded-lg bg-red-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-60"
+              className="rounded-lg bg-[#4a4a4a] px-5 py-2.5 text-sm font-bold text-[#ffdc59] shadow-sm transition duration-150 hover:-translate-y-px hover:bg-[#333] hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4a4a4a] active:translate-y-0 active:scale-95 disabled:translate-y-0 disabled:opacity-60 motion-reduce:transform-none"
             >
               {henter ? "Henter…" : "Hent timer"}
             </button>
@@ -227,14 +255,15 @@ export function HentFraSmartdok({
                 <>
                   {" "}
                   <Link to="/logg-inn" className="font-medium underline underline-offset-2">
-                    Logg inn på nytt
+                    Gå til innlogging
                   </Link>
                 </>
               )}
             </div>
           )}
         </div>
-      )}
+        </div>
+      </div>
     </div>
   );
 }

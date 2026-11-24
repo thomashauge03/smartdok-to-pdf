@@ -145,3 +145,28 @@
     -moz-osx-font-smoothing: grayscale;
   }
 }
+
+/* SmartDok-panelet: stripene som går mens timene hentes, og lysskjæret ved hover.
+   Ligger her og ikke inline, fordi keyframes ikke kan uttrykkes med Tailwind-klasser alene. */
+@keyframes smartdok-striper {
+  to { background-position: 28px 0; }
+}
+@keyframes smartdok-skjaer {
+  from { transform: translateX(-120%) skewX(-20deg); }
+  to { transform: translateX(420%) skewX(-20deg); }
+}
+.smartdok-striper {
+  background-image: repeating-linear-gradient(-45deg, #4a4a4a 0 7px, #ffdc59 7px 14px);
+  background-size: 28px 28px;
+  animation: smartdok-striper 0.6s linear infinite;
+}
+.smartdok-skjaer {
+  transform: translateX(-120%) skewX(-20deg);
+}
+.group:hover .smartdok-skjaer {
+  animation: smartdok-skjaer 0.9s ease-out 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .smartdok-striper { animation: none; }
+  .group:hover .smartdok-skjaer { animation: none; }
+}
