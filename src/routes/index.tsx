@@ -300,13 +300,15 @@ function Index() {
                 setLoggerUt(true);
                 try {
                   await loggUt();
+                } catch (feil) {
+                  console.error("Utlogging feilet", feil);
                 } finally {
                   // Navigerer uansett: overlever økta, sender /logg-inn oss rett tilbake hit.
                   await router.navigate({ to: "/logg-inn" });
                   setLoggerUt(false);
                 }
               }}
-              className="disabled:opacity-60inline-flex items-center gap-1.5 rounded-lg border border-neutral-600 bg-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-200 transition hover:border-neutral-500 hover:bg-neutral-700"
+              className="disabled:opacity-60 inline-flex items-center gap-1.5 rounded-lg border border-neutral-600 bg-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-200 transition hover:border-neutral-500 hover:bg-neutral-700"
             >
               <LogOut className="h-3.5 w-3.5" />
               Logg ut
