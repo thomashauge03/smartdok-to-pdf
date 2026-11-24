@@ -42,11 +42,11 @@ const HEADER_CONFIG: Record<string, Omit<ColMeta, "key">> = {
   "natttillegg":            { label: "Natttillegg",           sum: true,  align: "right",    defaultWidth: 80 },
 };
 
-function headerToKey(raw: string): string {
+export function headerToKey(raw: string): string {
   return raw.trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_æøå%]/g, "");
 }
 
-function buildColMeta(rawHeader: string): ColMeta {
+export function buildColMeta(rawHeader: string): ColMeta {
   const norm = rawHeader.trim().toLowerCase();
   const key = headerToKey(rawHeader);
 
@@ -97,14 +97,14 @@ function fmtDate(d: Date): string {
   return `${dd}.${mm}.${d.getFullYear()}`;
 }
 
-function fmtNum(v: unknown): string {
+export function fmtNum(v: unknown): string {
   if (v === null || v === undefined || v === "") return "";
   const n = typeof v === "number" ? v : Number(String(v).replace(",", "."));
   if (isNaN(n)) return String(v);
   return Number.isInteger(n) ? String(n) : String(n).replace(".", ",");
 }
 
-function cleanKommentar(s: string): string {
+export function cleanKommentar(s: string): string {
   return String(s ?? "")
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/^\s*-\s*/, "")
@@ -116,6 +116,20 @@ function shortProsjekt(p: string): string {
   const m = String(p).match(/^(\d+)\s+(.*?)(\d+)\s+(.+)$/);
   if (m) return `${m[1]} ${m[4].trim()} ${m[3]}`;
   return p;
+}
+
+// Teksten under «Vedlegg» ut fra månedene som er med («November 2026»,
+// «Januar - Mars 2026»). Delt mellom Excel-parseren og timer fra adminbordet
+// slik at begge gir nøyaktig samme tekst.
+export function vedleggFraMaaneder(maaneder: { year: number; month: number }[]): string {
+  const months = [...maaneder].sort((a, b) => a.year - b.year || a.month - b.month);
+  if (months.length === 0) return "";
+  if (months.length === 1) return `${MAANEDER[months[0].month]} ${months[0].year}`;
+  const first = months[0];
+  const last = months[months.length - 1];
+  return first.year === last.year
+    ? `${MAANEDER[first.month]} - ${MAANEDER[last.month]} ${last.year}`
+    : `${MAANEDER[first.month]} ${first.year} - ${MAANEDER[last.month]} ${last.year}`;
 }
 
 export async function parseSmartdok(file: File): Promise<Parsed> {
@@ -214,17 +228,7 @@ export async function parseSmartdok(file: File): Promise<Parsed> {
     rows.push(row);
   }
 
-  months.sort((a, b) => a.year - b.year || a.month - b.month);
-  let vedlegg = "";
-  if (months.length === 1) {
-    vedlegg = `${MAANEDER[months[0].month]} ${months[0].year}`;
-  } else if (months.length > 1) {
-    const first = months[0];
-    const last = months[months.length - 1];
-    vedlegg = first.year === last.year
-      ? `${MAANEDER[first.month]} - ${MAANEDER[last.month]} ${last.year}`
-      : `${MAANEDER[first.month]} ${first.year} - ${MAANEDER[last.month]} ${last.year}`;
-  }
+  const vedlegg = vedleggFraMaaneder(months);
 
   const populatedCols = columns
     .filter((c) => rows.some((r) => {
