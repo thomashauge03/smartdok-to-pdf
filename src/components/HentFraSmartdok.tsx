@@ -58,7 +58,8 @@ export function HentFraSmartdok({
     try {
       const svar = await hentProsjekter();
       if (svar.ok) {
-        setProsjekter(svar.prosjekter);
+        // Adminbordet sender bare aktive; filteret her er for sikkerhets skyld (Thomas: ingen inaktive).
+        setProsjekter(svar.prosjekter.filter((p) => p.aktiv));
         setFeil(null);
         setLoggInn(false);
       } else {
@@ -169,7 +170,6 @@ export function HentFraSmartdok({
                             <span className="truncate">
                               {p.nummer} {p.navn}
                               {p.kunde && <span className="ml-2 text-neutral-400">{p.kunde}</span>}
-                              {!p.aktiv && <span className="ml-2 text-xs text-neutral-400">(inaktiv)</span>}
                             </span>
                           </CommandItem>
                       ))}
