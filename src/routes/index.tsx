@@ -265,9 +265,9 @@ function Index() {
     }
   }, [visTabell]);
 
-  const onHentet = useCallback((p: Parsed) => {
+  const onHentet = useCallback((p: Parsed, nummer: string) => {
     setError(null);
-    visTabell(p, `smartdok-${p.prosjekt.split(" ")[0]}`);
+    visTabell(p, `smartdok-${nummer}`);
     const key = p.columns.find((c) => c.label === "Fakturert")?.key;
     if (key) setFilters((f) => ({ ...f, [key]: new Set(["Nei"]) }));
   }, [visTabell]);

@@ -33,7 +33,7 @@ export function HentFraSmartdok({
   onHentet,
   harTabell,
 }: {
-  onHentet: (p: Parsed) => void;
+  onHentet: (p: Parsed, nummer: string) => void;
   harTabell: boolean;
 }) {
   const [aapen, setAapen] = useState(false);
@@ -76,7 +76,7 @@ export function HentFraSmartdok({
     const { fra, til } = periode;
     if (!DATO_RE.test(fra) || !DATO_RE.test(til)) return visFeil("Fyll inn både fra- og til-dato.");
     if (fra > til) return visFeil("Fra-datoen kan ikke være etter til-datoen.");
-    if (dagerMellom(fra, til) > 366) return visFeil("Perioden kan være maks 366 dager.");
+    if (dagerMellom(fra, til) > 365) return visFeil("Perioden kan være maks 366 dager.");
     if (harTabell && !window.confirm("Erstatte timene i tabellen?")) return;
 
     setFeil(null);
@@ -88,7 +88,11 @@ export function HentFraSmartdok({
         visFeil(svar.feil, !!svar.loggInn);
         return;
       }
-      onHentet(byggTabell(svar.timer, { nummer: valgt.nummer, navn: valgt.navn }, { fra, til }));
+      if (svar.timer.length === 0) {
+        visFeil("Fant ingen timer for prosjektet i perioden.");
+        return;
+      }
+      onHentet(byggTabell(svar.timer, { nummer: valgt.nummer, navn: valgt.navn }, { fra, til }), valgt.nummer);
     } catch (e) {
       visFeil(e instanceof Error && e.message ? e.message : "Kunne ikke hente timer. Prøv igjen.");
     } finally {
@@ -124,11 +128,18 @@ export function HentFraSmartdok({
         <div className="space-y-4 border-t border-neutral-200 px-6 py-5">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-[2fr_1fr_1fr_auto] md:items-end">
             <div>
-              <span className={etikett}>Prosjekt</span>
-              <Popover open={velgerAapen} onOpenChange={setVelgerAapen}>
+              <span id="hent-prosjekt-etikett" className={etikett}>Prosjekt</span>
+              <Popover
+                open={velgerAapen}
+                onOpenChange={(o) => {
+                  setVelgerAapen(o);
+                  if (o) void lastProsjekter();
+                }}
+              >
                 <PopoverTrigger asChild>
                   <button
                     type="button"
+                    aria-labelledby="hent-prosjekt-etikett"
                     className={`${feltKlasse} flex items-center justify-between gap-2 text-left`}
                   >
                     <span className={`truncate ${valgt ? "font-medium" : "text-neutral-400"}`}>
@@ -171,6 +182,7 @@ export function HentFraSmartdok({
               <input
                 id="hent-fra"
                 type="date"
+                disabled={henter}
                 value={periode.fra}
                 onChange={(e) => setPeriode((p) => ({ ...p, fra: e.target.value }))}
                 className={feltKlasse}
@@ -181,6 +193,7 @@ export function HentFraSmartdok({
               <input
                 id="hent-til"
                 type="date"
+                disabled={henter}
                 value={periode.til}
                 onChange={(e) => setPeriode((p) => ({ ...p, til: e.target.value }))}
                 className={feltKlasse}
@@ -200,6 +213,14 @@ export function HentFraSmartdok({
           {feil && (
             <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {feil}
+              {!prosjekter && !lasterProsjekter && !loggInn && (
+                <>
+                  {" "}
+                  <button type="button" onClick={() => void lastProsjekter()} className="font-medium underline underline-offset-2">
+                    Prøv igjen
+                  </button>
+                </>
+              )}
               {loggInn && (
                 <>
                   {" "}
