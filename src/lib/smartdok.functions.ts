@@ -5,17 +5,14 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 import { feilmelding } from "./innlogging";
+import { feilSvar, GENERELL_FEIL, IKKE_SATT_OPP, normaliserAdminbordUrl, UTLOGGET } from "./adminbord-svar";
+import type { Feil } from "./adminbord-svar";
 import type { SmartdokTime } from "./smartdok-timer";
 
 // Importene fra .server.ts-filer skjer inne i handlerne så de aldri havner i
 // klientpakken.
 
 export type Svar<T> = ({ ok: true } & T) | { ok: false; feil: string; loggInn?: true };
-
-type Feil = { ok: false; feil: string; loggInn?: true };
-
-const UTLOGGET: Feil = { ok: false, feil: "Du er logget ut. Logg inn på nytt.", loggInn: true };
-const GENERELL_FEIL = "Fikk ikke kontakt med adminbordet.";
 
 const prosjektSkjema = z.object({
   nummer: z.string(),
@@ -44,13 +41,6 @@ const timeSkjema = z.object({
 });
 const timerSkjema = z.object({ timer: z.array(timeSkjema) });
 
-// Ren hjelper: oversetter en feilstatus fra adminbordet til et Svar.
-export function feilSvar(status: number, adminbordFeil: string | null): Feil {
-  if (status === 401) return UTLOGGET;
-  if (status === 403) return { ok: false, feil: feilmelding("ingen-tilgang") };
-  return { ok: false, feil: adminbordFeil || GENERELL_FEIL };
-}
-
 async function harTilgang(supabase: SupabaseClient): Promise<boolean> {
   const { data, error } = await supabase.rpc("smartdok_pdf_har_tilgang");
   return !error && data === true;
@@ -70,14 +60,20 @@ async function kallAdminbord(sti: string, sok: URLSearchParams | null): Promise<
   const token = okt.session?.access_token;
   if (!token) return UTLOGGET;
 
-  const base = process.env.ADMINBORD_URL?.trim().replace(/\/+$/, "");
-  if (!base) return { ok: false, feil: "Henting fra SmartDok er ikke satt opp." };
+  const base = normaliserAdminbordUrl(process.env.ADMINBORD_URL);
+  if (!base) return { ok: false, feil: IKKE_SATT_OPP };
 
   const url = `${base}${sti}${sok ? `?${sok.toString()}` : ""}`;
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
     signal: AbortSignal.timeout(110_000),
+    // Aldri følg omdirigeringer: tokenet skal ikke sendes videre.
+    redirect: "manual",
   });
+
+  if (res.type === "opaqueredirect" || (res.status >= 300 && res.status < 400)) {
+    return { ok: false, feil: GENERELL_FEIL };
+  }
 
   if (!res.ok) {
     let tekst: string | null = null;
@@ -92,6 +88,12 @@ async function kallAdminbord(sti: string, sok: URLSearchParams | null): Promise<
   return { json: await res.json() };
 }
 
+// Logger bare stiene til feltene som ikke stemmer, aldri verdier.
+function skjemaFeil(error: z.ZodError): Feil {
+  console.error("Uventet svarformat fra adminbordet:", error.issues.map((i) => i.path.join(".")).join(", "));
+  return { ok: false, feil: GENERELL_FEIL };
+}
+
 function uventet(e: unknown): Feil {
   console.error("Henting fra adminbordet feilet uventet:", e instanceof Error ? e.message : "ukjent feil");
   return { ok: false, feil: GENERELL_FEIL };
@@ -103,7 +105,7 @@ export const hentProsjekter = createServerFn({ method: "GET" }).handler(
       const r = await kallAdminbord("/api/smartdok-pdf/prosjekter", null);
       if (!("json" in r)) return r;
       const parsed = prosjekterSkjema.safeParse(r.json);
-      if (!parsed.success) return { ok: false, feil: GENERELL_FEIL };
+      if (!parsed.success) return skjemaFeil(parsed.error);
       return { ok: true, prosjekter: parsed.data.prosjekter };
     } catch (e) {
       return uventet(e);
@@ -121,7 +123,7 @@ export const hentTimer = createServerFn({ method: "POST" })
       const r = await kallAdminbord("/api/smartdok-pdf/timer", sok);
       if (!("json" in r)) return r;
       const parsed = timerSkjema.safeParse(r.json);
-      if (!parsed.success) return { ok: false, feil: GENERELL_FEIL };
+      if (!parsed.success) return skjemaFeil(parsed.error);
       return { ok: true, timer: parsed.data.timer };
     } catch (e) {
       return uventet(e);
