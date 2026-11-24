@@ -1,4 +1,4 @@
-import { createStart, createMiddleware } from "@tanstack/react-start";
+import { createCsrfMiddleware, createStart, createMiddleware } from "@tanstack/react-start";
 
 import { renderErrorPage } from "./lib/error-page";
 
@@ -18,5 +18,10 @@ const errorMiddleware = createMiddleware().server(async ({ next }) => {
 });
 
 export const startInstance = createStart(() => ({
-  requestMiddleware: [errorMiddleware],
+  // Egen requestMiddleware gjør at start-server-core dropper sin standard CSRF-beskyttelse,
+  // så den legges inn her igjen for server-funksjonene (innlogging bruker cookies).
+  requestMiddleware: [
+    createCsrfMiddleware({ filter: (ctx) => ctx.handlerType === "serverFn" }),
+    errorMiddleware,
+  ],
 }));

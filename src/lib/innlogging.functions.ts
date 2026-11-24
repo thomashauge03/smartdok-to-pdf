@@ -38,7 +38,16 @@ export const loggInn = createServerFn({ method: "POST" })
           email: data.epost,
           password: data.passord,
         });
-        if (error) return { ok: false, feil: "feil-passord" };
+        if (error) {
+          // Bare ugyldig innlogging skal se ut som feil passord; 429, nettverks- og
+          // 5xx-feil er ikke brukerens feil. Status 400 brukes bare når koden mangler.
+          const ugyldig = error.code === "invalid_credentials" || (error.code === undefined && error.status === 400);
+          if (!ugyldig) {
+            console.error("Innlogging avvist av Supabase:", error.message);
+            return { ok: false, feil: "ukjent" };
+          }
+          return { ok: false, feil: "feil-passord" };
+        }
 
         if ((await harTilgang(supabase)) !== true) {
           // Lokalt omfang fjerner cookien før nettverkskallet, så den ikke blir

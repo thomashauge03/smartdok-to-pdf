@@ -41,6 +41,8 @@ export const Route = createFileRoute("/")({
     }
     return { epost: innlogging.epost };
   },
+  // Siden er per bruker og skal aldri ligge i delt cache eller bfcache-lignende lagring.
+  headers: () => ({ "Cache-Control": "private, no-store" }),
   head: () => ({
     meta: [
       { title: "SmartDok → PDF | HM" },
@@ -291,8 +293,11 @@ function Index() {
             <p className="text-sm font-bold tracking-tight text-white">Timeliste → PDF</p>
             <p className="text-[11px] text-neutral-400">SmartDok-eksport</p>
           </div>
-          <div className="ml-auto flex items-center gap-3">
-            <span className="text-xs text-neutral-400">{epost}</span>
+          <div className="ml-auto flex min-w-0 shrink-0 items-center gap-3">
+            {/* Skjult på smale skjermer: e-posten kan ikke krympe og ga sidelengs scrolling. */}
+            <span className="hidden max-w-[16rem] truncate text-xs text-neutral-400 sm:inline" title={epost}>
+              {epost}
+            </span>
             <button
               type="button"
               disabled={loggerUt}
