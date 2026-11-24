@@ -130,3 +130,47 @@ test("vedleggFraMaaneder gir samme tekst som Excel-banen", () => {
     "Januar - Mars 2026",
   );
 });
+
+test("tillegg som heter det samme som en basiskolonne får egen kolonne", () => {
+  const t = byggTabell([
+    arbeid({ id: 1, fakturert: true }),
+    tillegg({ id: 1, lonnsart: "Timer", mengde: 3, fakturert: true }),
+    tillegg({ id: 1, lonnsart: "Fakturert", mengde: 4, fakturert: true }),
+  ], prosjekt, periode);
+  const nokler = t.columns.map((c) => c.key);
+  assert.equal(new Set(nokler).size, nokler.length);
+  const r = t.rows[0];
+  const verdier = Object.values(r);
+  assert.ok(verdier.includes("7,5") && verdier.includes("3") && verdier.includes("4") && verdier.includes("Ja"));
+  const timerBasis = t.columns.findIndex((c) => c.label === "Timer");
+  assert.equal(r[t.columns[timerBasis].key], "7,5");
+  const timerTillegg = t.columns.findIndex((c, i) => c.label === "Timer" && i !== timerBasis);
+  assert.equal(r[t.columns[timerTillegg].key], "3");
+  const faktBasis = t.columns.findIndex((c) => c.label === "Fakturert" && !c.sum);
+  assert.equal(r[t.columns[faktBasis].key], "Ja");
+  const faktTillegg = t.columns.findIndex((c) => c.label === "Fakturert" && c.sum);
+  assert.equal(r[t.columns[faktTillegg].key], "4");
+});
+
+test("to arbeidsrader med samme id gir feil", () => {
+  assert.throws(() => byggTabell([arbeid({ id: 1 }), arbeid({ id: 1 })], prosjekt, periode), /samme id/);
+});
+
+test("to foreldreløse rader med samme id havner på én rad", () => {
+  const t = byggTabell([tillegg({ id: 9 }), maskin({ id: 9 })], prosjekt, periode);
+  assert.equal(t.rows.length, 1);
+  assert.equal(t.rows[0]["overtid_50%"], "2");
+  assert.equal(t.rows[0]["maskinnavn1"], "Gravemaskin");
+});
+
+test("Tid for kvarter og rett før midnatt", () => {
+  assert.equal(byggTabell([arbeid({ id: 1, fra: 7.25, til: 23.99 })], prosjekt, periode).rows[0]["tid"], "07:15–23:59");
+});
+
+test("rad uten tid kommer først på datoen", () => {
+  const t = byggTabell([
+    arbeid({ id: 1, navn: "A", fra: 7 }),
+    tillegg({ id: 2, navn: "B" }),
+  ], prosjekt, periode);
+  assert.deepEqual(t.rows.map((r) => r["navn"]), ["B", "A"]);
+});

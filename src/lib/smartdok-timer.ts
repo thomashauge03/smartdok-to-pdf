@@ -52,7 +52,11 @@ export function byggTabell(
   // Grupper på id: tillegg og maskin hører til arbeidsraden med samme id.
   const grupper = new Map<number, Gruppe>();
   for (const t of timer) {
-    if (t.type === "arbeid") grupper.set(t.id, { hoved: t, arbeid: true, tillegg: [], maskiner: [] });
+    if (t.type === "arbeid") {
+      // To arbeidsrader med samme id betyr ugyldige data fra adminbordet; bedre å stoppe enn å droppe en stille.
+      if (grupper.has(t.id)) throw new Error(`To arbeidsrader har samme id (${t.id}). Dataene fra adminbordet er ugyldige.`);
+      grupper.set(t.id, { hoved: t, arbeid: true, tillegg: [], maskiner: [] });
+    }
   }
   for (const t of timer) {
     if (t.type === "arbeid") continue;
@@ -96,8 +100,14 @@ export function byggTabell(
     antall.set(c.key, n + 1);
     if (n > 0) c.key = `${c.key}_${n + 1}`;
   }
-  const nokkel = (raw: string) => columns[overskrifter.findIndex((o) => o.raw === raw)].key;
-  const tilleggNokkel = new Map(tilleggNavn.map((n) => [n, nokkel(n)]));
+  // Nøkler slås opp på kolonneindeks, ikke på overskriftstekst: et tillegg kan hete det samme
+  // som en basiskolonne («Timer», «Fakturert»), og da må de ha hver sin (dedupede) nøkkel.
+  const basisNokkel = new Map<string, string>();
+  const tilleggNokkel = new Map<string, string>();
+  overskrifter.forEach((o, i) => {
+    (o.tillegg ? tilleggNokkel : basisNokkel).set(o.raw, columns[i].key);
+  });
+  const nokkel = (raw: string) => basisNokkel.get(raw)!;
 
   const sortert = [...liste].sort((a, b) =>
     a.hoved.dato.localeCompare(b.hoved.dato) ||
@@ -115,7 +125,7 @@ export function byggTabell(
     if (g.arbeid) {
       row[nokkel("Lønnsart")] = h.lonnsart;
       row[nokkel("Kommentar")] = cleanKommentar(h.kommentar);
-      row[nokkel("Timer")] = fmtNum(h.mengde);
+      row[nokkel("Timer")] = fmtNum(rund(h.mengde));
     }
     const sum = new Map<string, number>();
     for (const t of g.tillegg) sum.set(t.lonnsart, (sum.get(t.lonnsart) ?? 0) + t.mengde);
