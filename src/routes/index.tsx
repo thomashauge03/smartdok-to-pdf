@@ -1,4 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
+import { hentInnlogging, loggUt } from "@/lib/innlogging.functions";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Trash2,
@@ -15,6 +16,7 @@ import {
   X,
   RectangleHorizontal,
   RectangleVertical,
+  LogOut,
 } from "lucide-react";
 import {
   parseSmartdok,
@@ -30,6 +32,15 @@ import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from "@/compone
 import { Checkbox } from "@/components/ui/checkbox";
 
 export const Route = createFileRoute("/")({
+  // Låsen ligger på serveren: uten gyldig økt og tilgang rendres aldri siden.
+  beforeLoad: async () => {
+    const innlogging = await hentInnlogging();
+    if (innlogging.status === "ute") throw redirect({ to: "/logg-inn" });
+    if (innlogging.status === "ingen-tilgang") {
+      throw redirect({ to: "/logg-inn", search: { "ingen-tilgang": 1 } });
+    }
+    return { epost: innlogging.epost };
+  },
   head: () => ({
     meta: [
       { title: "SmartDok → PDF | HM" },
@@ -58,6 +69,8 @@ function HMLogo() {
 }
 
 function Index() {
+  const { epost } = Route.useRouteContext();
+  const router = useRouter();
   const [parsed, setParsed] = useState<Parsed | null>(null);
   const [prosjekt, setProsjekt] = useState("");
   const [vedlegg, setVedlegg] = useState("");
@@ -276,6 +289,20 @@ function Index() {
           <div className="leading-tight">
             <p className="text-sm font-bold tracking-tight text-white">Timeliste → PDF</p>
             <p className="text-[11px] text-neutral-400">SmartDok-eksport</p>
+          </div>
+          <div className="ml-auto flex items-center gap-3">
+            <span className="text-xs text-neutral-400">{epost}</span>
+            <button
+              type="button"
+              onClick={async () => {
+                await loggUt();
+                await router.navigate({ to: "/logg-inn" });
+              }}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-600 bg-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-200 transition hover:border-neutral-500 hover:bg-neutral-700"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              Logg ut
+            </button>
           </div>
         </div>
       </header>
