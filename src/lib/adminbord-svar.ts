@@ -24,3 +24,17 @@ export function normaliserAdminbordUrl(rå: string | undefined): string | null {
   if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(base)) return base;
   return null;
 }
+
+export type Svar<T> = ({ ok: true } & T) | { ok: false; feil: string; loggInn?: true };
+
+// Logger bare stiene til feltene som ikke stemmer, aldri verdier.
+export function skjemaFeil(error: { issues: { path: PropertyKey[] }[] }): Feil {
+  console.error("Uventet svarformat fra adminbordet:", error.issues.map((i) => i.path.map(String).join(".")).join(", "));
+  return { ok: false, feil: GENERELL_FEIL };
+}
+
+export function uventet(e: unknown): Feil {
+  console.error("Kallet til adminbordet feilet uventet:", e instanceof Error ? e.message : "ukjent feil");
+  if (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError")) return { ok: false, feil: TIDSAVBRUDD };
+  return { ok: false, feil: GENERELL_FEIL };
+}
