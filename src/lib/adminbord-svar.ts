@@ -40,9 +40,9 @@ export function uventet(e: unknown): Feil {
 }
 
 // Skriving: uten svar vet vi ikke om Tripletex tok imot. Da må brukeren få vite
-// at det ikke er trygt å sende på nytt, og flagget lar UI-et vise «Avklar».
+// at det ikke er trygt å sende på nytt, og flagget lar UI-et peke til «Sendinger».
 export const UKJENT_UTFALL_FEIL =
-  "Fikk ikke svar fra Tripletex i tide. Sendingen kan ha gått gjennom – ikke send på nytt, se «Sendinger» og bruk «Avklar».";
+  "Fikk ikke svar i tide. Det kan ha gått gjennom – ikke send på nytt, men åpne «Sendinger» og sjekk sendingen der.";
 
 /** Uventet feil (tidsavbrudd, nettfeil, kaste unntak) under en skriving. */
 export function uventetSkriving(e: unknown): Feil {

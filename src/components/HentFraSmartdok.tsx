@@ -7,6 +7,9 @@ import { byggTabell } from "@/lib/smartdok-timer";
 import type { Parsed } from "@/lib/smartdok-parser";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Koblingsliste } from "@/components/Koblingsliste";
+import { Sendinger } from "@/components/Sendinger";
+import type { SmartdokKilde } from "@/components/LeggPaaOrdre";
 
 type Prosjekt = { nummer: string; navn: string; kunde: string | null; aktiv: boolean };
 
@@ -30,12 +33,37 @@ function dagerMellom(fra: string, til: string): number {
 
 const DATO_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * Henter timene og bygger tabellen. Brukes av panelet og når tabellen hentes på
+ * nytt etter en sending (samme prosjekt og periode).
+ */
+export async function hentSmartdokTabell(
+  kilde: SmartdokKilde,
+): Promise<{ ok: true; tabell: Parsed } | { ok: false; feil: string; loggInn: boolean }> {
+  try {
+    const svar = await hentTimer({ data: { prosjekt: kilde.nummer, fra: kilde.fra, til: kilde.til } });
+    if (!svar.ok) return { ok: false, feil: svar.feil, loggInn: !!svar.loggInn };
+    if (svar.timer.length === 0) return { ok: false, feil: "Fant ingen timer for prosjektet i perioden.", loggInn: false };
+    return {
+      ok: true,
+      tabell: byggTabell(svar.timer, { nummer: kilde.nummer, navn: kilde.navn }, { fra: kilde.fra, til: kilde.til }),
+    };
+  } catch (e) {
+    // Transportfeil kan inneholde interne detaljer; vis en fast tekst og logg meldingen.
+    console.error("Henting av timer feilet:", e instanceof Error ? e.message : "ukjent feil");
+    return { ok: false, feil: "Noe gikk galt under hentingen. Prøv igjen.", loggInn: false };
+  }
+}
+
 export function HentFraSmartdok({
   onHentet,
   harTabell,
+  onSendingEndret,
 }: {
-  onHentet: (p: Parsed, nummer: string) => void;
+  onHentet: (p: Parsed, kilde: SmartdokKilde) => void;
   harTabell: boolean;
+  /** Etter angring i Sendinger: tabellen hentes på nytt hvis den er fra samme prosjekt. */
+  onSendingEndret?: (prosjekt: string) => void;
 }) {
   const [aapen, setAapen] = useState(false);
   const [prosjekter, setProsjekter] = useState<Prosjekt[] | null>(null);
@@ -46,6 +74,8 @@ export function HentFraSmartdok({
   const [henter, setHenter] = useState(false);
   const [feil, setFeil] = useState<string | null>(null);
   const [loggInn, setLoggInn] = useState(false);
+  const [koblingerAapen, setKoblingerAapen] = useState(false);
+  const [sendingerAapen, setSendingerAapen] = useState(false);
 
   const visFeil = (melding: string, krevInnlogging = false) => {
     setFeil(melding);
@@ -85,20 +115,13 @@ export function HentFraSmartdok({
     setLoggInn(false);
     setHenter(true);
     try {
-      const svar = await hentTimer({ data: { prosjekt: valgt.nummer, fra, til } });
-      if (!svar.ok) {
-        visFeil(svar.feil, !!svar.loggInn);
+      const kilde = { nummer: valgt.nummer, navn: valgt.navn, fra, til };
+      const r = await hentSmartdokTabell(kilde);
+      if (!r.ok) {
+        visFeil(r.feil, r.loggInn);
         return;
       }
-      if (svar.timer.length === 0) {
-        visFeil("Fant ingen timer for prosjektet i perioden.");
-        return;
-      }
-      onHentet(byggTabell(svar.timer, { nummer: valgt.nummer, navn: valgt.navn }, { fra, til }), valgt.nummer);
-    } catch (e) {
-      // Transportfeil kan inneholde interne detaljer; vis en fast tekst og logg meldingen.
-      console.error("Henting av timer feilet:", e instanceof Error ? e.message : "ukjent feil");
-      visFeil("Noe gikk galt under hentingen. Prøv igjen.");
+      onHentet(r.tabell, kilde);
     } finally {
       setHenter(false);
     }
@@ -108,6 +131,8 @@ export function HentFraSmartdok({
   const feltKlasse =
     "w-full rounded-lg border-2 border-[#ecd27a] bg-white px-3 py-2 text-sm text-neutral-900 outline-none transition focus:border-[#4a4a4a] focus:ring-3 focus:ring-[#ffdc59]/60 disabled:opacity-60";
   const etikett = "mb-1.5 block text-[11px] font-bold uppercase tracking-widest text-[#4a4a4a]/70";
+  const smaaKnapp =
+    "rounded-lg border border-[#d9bf5c] bg-white px-3 py-1.5 text-xs font-medium text-[#4a4a4a] transition hover:bg-[#fff1b8] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4a4a4a] disabled:cursor-not-allowed disabled:opacity-50";
 
   return (
     <div
@@ -240,6 +265,22 @@ export function HentFraSmartdok({
             </button>
           </div>
 
+          <div className="flex flex-wrap items-center gap-2 border-t border-[#ecd27a] pt-3">
+            <span className="mr-1 text-xs font-medium text-[#4a4a4a]/80">Tripletex:</span>
+            <button type="button" onClick={() => setKoblingerAapen(true)} className={smaaKnapp}>
+              Koblingsliste
+            </button>
+            <button
+              type="button"
+              onClick={() => setSendingerAapen(true)}
+              disabled={!valgt}
+              title={valgt ? undefined : "Velg et prosjekt først"}
+              className={smaaKnapp}
+            >
+              Sendinger{valgt ? ` på ${valgt.nummer}` : ""}
+            </button>
+          </div>
+
           {feil && (
             <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {feil}
@@ -264,6 +305,16 @@ export function HentFraSmartdok({
         </div>
         </div>
       </div>
+
+      <Koblingsliste open={koblingerAapen} onOpenChange={setKoblingerAapen} />
+      {valgt && (
+        <Sendinger
+          open={sendingerAapen}
+          onOpenChange={setSendingerAapen}
+          prosjekt={{ nummer: valgt.nummer, navn: valgt.navn }}
+          onEndret={() => onSendingEndret?.(valgt.nummer)}
+        />
+      )}
     </div>
   );
 }

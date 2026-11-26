@@ -17,6 +17,7 @@ import {
   RectangleHorizontal,
   RectangleVertical,
   LogOut,
+  Send,
 } from "lucide-react";
 import {
   parseSmartdok,
@@ -29,7 +30,9 @@ import {
 } from "@/lib/smartdok-parser";
 import { generatePdf, pdfFilename, type PdfOrientation } from "@/lib/smartdok-pdf";
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { HentFraSmartdok } from "@/components/HentFraSmartdok";
+import { HentFraSmartdok, hentSmartdokTabell } from "@/components/HentFraSmartdok";
+import { LeggPaaOrdre, type SmartdokKilde } from "@/components/LeggPaaOrdre";
+import { Sendinger } from "@/components/Sendinger";
 import { Checkbox } from "@/components/ui/checkbox";
 
 export const Route = createFileRoute("/")({
@@ -83,6 +86,10 @@ function Index() {
   const [busy, setBusy] = useState(false);
   const [drag, setDrag] = useState(false);
   const [orientation, setOrientation] = useState<PdfOrientation>("landscape");
+  // Prosjekt og periode når tabellen kom fra SmartDok (null for opplastede filer).
+  const [kilde, setKilde] = useState<SmartdokKilde | null>(null);
+  const [ordreAapen, setOrdreAapen] = useState(false);
+  const [sendingerAapen, setSendingerAapen] = useState(false);
 
   const [filters, setFilters] = useState<Record<string, Set<string>>>({});
   const [dateSort, setDateSort] = useState<"none" | "asc" | "desc">("none");
@@ -257,6 +264,7 @@ function Index() {
     try {
       const p = await parseSmartdok(file);
       visTabell(p, file.name.replace(/\.[^.]+$/, ""));
+      setKilde(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setParsed(null);
@@ -265,9 +273,10 @@ function Index() {
     }
   }, [visTabell]);
 
-  const onHentet = useCallback((p: Parsed, nummer: string) => {
+  const onHentet = useCallback((p: Parsed, k: SmartdokKilde) => {
     setError(null);
-    visTabell(p, `smartdok-${nummer}`);
+    visTabell(p, `smartdok-${k.nummer}`);
+    setKilde(k);
     // «Delvis»-rader har ufakturerte timer, så de skal være med. Filteret gjelder alle filterkolonner,
     // også når Fakturert-kolonnen er skjult.
     const key = p.fakturertKey;
@@ -279,11 +288,33 @@ function Index() {
     }));
   }, [visTabell]);
 
+  // Én kilde for PDF-en: «Last ned PDF» og vedlegget til Tripletex-ordren skal være like.
+  const byggPdf = useCallback(
+    () => generatePdf(visibleRows, visibleColList, prosjekt, vedlegg, orientation),
+    [visibleRows, visibleColList, prosjekt, vedlegg, orientation],
+  );
+
+  const lagPdfTilOrdre = useCallback(async () => {
+    const doc = await byggPdf();
+    return { data: doc.output("arraybuffer"), filnavn: pdfFilename(prosjekt, vedlegg) };
+  }, [byggPdf, prosjekt, vedlegg]);
+
+  // Samme prosjekt og periode som sist, uten «Erstatte timene?»: brukeren har nettopp sendt dem.
+  const hentPaaNytt = useCallback(async (): Promise<string | null> => {
+    if (!kilde) return "Tabellen kom ikke fra SmartDok.";
+    const r = await hentSmartdokTabell(kilde);
+    if (!r.ok) return r.feil;
+    onHentet(r.tabell, kilde);
+    return null;
+  }, [kilde, onHentet]);
+
+  const synligeKolonner = useMemo(() => new Set(visibleColList.map((c) => c.key)), [visibleColList]);
+
   const onDownload = async () => {
     if (!parsed) return;
     setBusy(true);
     try {
-      const doc = await generatePdf(visibleRows, visibleColList, prosjekt, vedlegg, orientation);
+      const doc = await byggPdf();
       doc.save(pdfFilename(prosjekt, vedlegg));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -390,7 +421,13 @@ function Index() {
           </div>
         </label>
 
-        <HentFraSmartdok onHentet={onHentet} harTabell={parsed !== null} />
+        <HentFraSmartdok
+          onHentet={onHentet}
+          harTabell={parsed !== null}
+          onSendingEndret={(nr) => {
+            if (kilde?.nummer === nr) void hentPaaNytt().then((f) => f && setError(f));
+          }}
+        />
 
         {/* ── Error ── */}
         {error && (
@@ -454,7 +491,7 @@ function Index() {
               </div>
 
               {/* Controls */}
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
 
                 {/* Column picker */}
                 <Popover>
@@ -529,6 +566,27 @@ function Index() {
                     <><Download className="h-3.5 w-3.5" />Last ned PDF</>
                   )}
                 </button>
+
+                {/* Tripletex: bare for timer hentet fra SmartDok (de har id-ene som merkes). */}
+                {kilde && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setSendingerAapen(true)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-600 bg-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-200 transition hover:border-neutral-500 hover:bg-neutral-700"
+                    >
+                      Sendinger
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOrdreAapen(true)}
+                      disabled={busy}
+                      className="inline-flex items-center gap-2 rounded-lg bg-[#ffdc59] px-4 py-1.5 text-xs font-bold text-[#4a4a4a] shadow-sm transition hover:bg-[#f7d044] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ffdc59]/60 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <Send className="h-3.5 w-3.5" />Legg på ordre i Tripletex
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
@@ -736,6 +794,28 @@ function Index() {
           </div>
         )}
       </main>
+
+      {kilde && parsed && (
+        <>
+          <LeggPaaOrdre
+            open={ordreAapen}
+            onOpenChange={setOrdreAapen}
+            kilde={kilde}
+            rows={visibleRows}
+            columns={columns}
+            synlige={synligeKolonner}
+            tripletexKey={parsed.tripletexKey}
+            lagPdf={lagPdfTilOrdre}
+            hentPaaNytt={hentPaaNytt}
+          />
+          <Sendinger
+            open={sendingerAapen}
+            onOpenChange={setSendingerAapen}
+            prosjekt={{ nummer: kilde.nummer, navn: kilde.navn }}
+            onEndret={() => void hentPaaNytt().then((f) => f && setError(f))}
+          />
+        </>
+      )}
     </div>
   );
 }
