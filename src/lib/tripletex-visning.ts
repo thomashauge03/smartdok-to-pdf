@@ -337,7 +337,7 @@ export function vurderForhandsvisning(
     sjekk.push({
       id: "alleredeFakturert",
       tekst:
-        `${timer(a.alleredeFakturert)} (maskin eller overtid) er alt merket fakturert i SmartDok, men legges på ordren likevel. ` +
+        `${timer(a.alleredeFakturert)} er alt merket fakturert i SmartDok, men legges på ordren likevel. ` +
         "Ta dem bort fra ordren i Tripletex om kunden alt har fått dem fakturert.",
     });
   }

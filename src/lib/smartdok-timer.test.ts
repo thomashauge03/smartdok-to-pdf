@@ -230,6 +230,19 @@ test("skjulte __fakt-nøkler: fakturert maskin per plass og fakturert tillegg pe
   assert.ok(!t.columns.some((c) => c.key.startsWith("__")));
 });
 
+test("skjult __fakt_timer: satt bare når arbeidstimen er fakturert", () => {
+  const t = byggTabell([
+    arbeid({ id: 1, fakturert: true }),
+    arbeid({ id: 2 }),
+    // Rad uten arbeidstime (bare et fakturert tillegg): ingen Timer, ingen __fakt_timer.
+    tillegg({ id: 3, fakturert: true }),
+  ], prosjekt, periode);
+  const merke = Object.fromEntries(t.rows.map((r) => [r["__id"], r["__fakt_timer"]]));
+  assert.equal(merke["1"], "1");
+  assert.notEqual(merke["2"], "1");
+  assert.notEqual(merke["3"], "1");
+});
+
 test("Tripletex-kolonnen: et fremmed merke som ligner vårt, kan ikke forveksles med «Ordre <nr>»", () => {
   const t = byggTabell([arbeid({ id: 1, eksterntMerke: "Ordre 77" }), arbeid({ id: 2, eksterntMerke: "Eksportert" })], prosjekt, periode);
   const k = t.tripletexKey!;

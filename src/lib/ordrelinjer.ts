@@ -144,6 +144,7 @@ export function beregnOrdrelinjer(
     if (!harFakturerbarMaskin && timerKey) {
       const timer = lesTall(row[timerKey], hvor("Timer"));
       if (timer > 0) {
+        if (row["__fakt_timer"] === "1") alleredeFakturert += timer;
         paaStandard(GRUNNARBEIDER, timer);
         somGrunnarbeider += timer;
         gaLinje = true;

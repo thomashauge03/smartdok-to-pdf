@@ -191,6 +191,7 @@ test("vurderForhandsvisning: uten kobling, uten pris og allerede fakturert er «
   assert.match(sjekk("alleredeFakturert"), /1,5 timer/);
   assert.match(sjekk("alleredeFakturert"), /fakturert i SmartDok/);
   assert.match(sjekk("alleredeFakturert"), /legges på ordren/);
+  assert.doesNotMatch(sjekk("alleredeFakturert"), /maskin eller overtid/);
   assert.match(info("somGrunnarbeider"), /3,5 timer/);
   assert.match(info("somGrunnarbeider"), /Grunnarbeider/);
   for (const m of [...v.sjekk, ...v.advarsler]) assert.doesNotMatch(m.tekst, /før du sender/, m.id);

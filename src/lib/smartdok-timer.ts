@@ -163,8 +163,10 @@ export function byggTabell(
     // Skjulte nøkler (ikke i columns): id-ene brukes når appen sender timene til Tripletex.
     row["__id"] = String(h.id);
     g.maskiner.forEach((m, i) => { row[`__maskin${i + 1}`] = m.maskinId === null ? "" : String(m.maskinId); });
-    // Fakturert i SmartDok per maskinplass og per tilleggskolonne: de timene er alt fakturert
-    // og skal ikke på ordren igjen. Fakturert-kolonnen sier bare noe om hele raden («Delvis»).
+    // Fakturert i SmartDok per arbeidstime, maskinplass og tilleggskolonne: timene går likevel
+    // på ordren (godkjennes i Tripletex), men forhåndsvisningen sier hvor mange det gjelder.
+    // Fakturert-kolonnen sier bare noe om hele raden («Delvis»).
+    if (g.arbeid && h.fakturert) row["__fakt_timer"] = "1";
     g.maskiner.forEach((m, i) => { if (m.fakturert) row[`__fakt_maskin${i + 1}`] = "1"; });
     // Ett fakturert tillegg i en kolonne gjør hele cellen fakturert: cellen er én sum,
     // og å fakturere den på nytt er verre enn at noe må legges inn for hånd.

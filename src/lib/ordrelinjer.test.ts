@@ -310,6 +310,20 @@ test("fakturert maskin som er «faktureres ikke» gir ingen linje og teller ikke
   assert.equal(r.advarsler.alleredeFakturert, 0);
 });
 
+test("fakturert arbeidstime uten maskin: 602 og 608 som linjer, alleredeFakturert er personens timer", () => {
+  const r = kjør([arbeid({ id: 1, mengde: 7.5, fakturert: true }), tillegg({ id: 1, mengde: 2 })], []);
+  assert.deepEqual(kort(r.linjer), [[pid("602"), 7.5], [pid("608"), 2]]);
+  assert.equal(r.advarsler.alleredeFakturert, 7.5);
+  assert.equal(r.advarsler.somGrunnarbeider, 7.5);
+  assert.deepEqual(r.timerIder, [1]);
+});
+
+test("fakturert arbeidstime på rad med fakturerbar maskin teller ikke: Timer blir ikke linje", () => {
+  const r = kjør([arbeid({ id: 1, mengde: 7.5, fakturert: true }), maskin({ id: 1, mengde: 5 })], [kob(11, "5")]);
+  assert.deepEqual(kort(r.linjer), [[pid("5"), 5]]);
+  assert.equal(r.advarsler.alleredeFakturert, 0);
+});
+
 /* ── Tilfelle 4: overtid blir alltid linje ───────────────── */
 
 test("overtid uten maskin blir 608-linje, og personens timer blir Grunnarbeider", () => {
