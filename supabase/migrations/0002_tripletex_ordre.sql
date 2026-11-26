@@ -118,10 +118,16 @@ create table if not exists public.smartdok_pdf_sending (
     'startet', 'sendt', 'sendt_uten_vedlegg', 'sendt_uten_merke',
     'ukjent_utfall', 'feilet', 'angret')),
   antall_linjer int,
+  -- Sant når sendingen selv laget ordren. Da er alle linjene på den våre, og
+  -- en ordre funnet etter ukjent utfall kan merkes. Null regnes som eksisterende.
+  ny_ordre      boolean,
   opprettet_av  uuid,
   opprettet     timestamptz default now(),
   endret        timestamptz default now()
 );
+
+-- For en database der tabellen ble laget før kolonnen kom til.
+alter table public.smartdok_pdf_sending add column if not exists ny_ordre boolean;
 
 -- Brukerne får bare lese. Adminbordet skriver med service role, som går utenom RLS.
 alter table public.smartdok_pdf_sending enable row level security;

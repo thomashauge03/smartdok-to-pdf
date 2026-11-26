@@ -194,6 +194,33 @@ test("authenticated kan lese sending, men ikke skrive", async () => {
   );
 });
 
+test("sending har ny_ordre (boolean, kan være null), og authenticated kan ikke skrive den", async () => {
+  const k = await db.query<{ data_type: string; is_nullable: string }>(
+    `select data_type, is_nullable from information_schema.columns
+     where table_schema = 'public' and table_name = 'smartdok_pdf_sending' and column_name = 'ny_ordre'`,
+  );
+  assert.equal(k.rows.length, 1);
+  assert.equal(k.rows[0].data_type, "boolean");
+  assert.equal(k.rows[0].is_nullable, "YES");
+
+  await db.exec(`insert into public.smartdok_pdf_sending (kode, prosjekt, timer_ider, status, ny_ordre)
+                 values ('nyord1', 'P1', '{3}', 'startet', true)`);
+  await somBruker(true);
+  const r = await db.query<{ ny_ordre: boolean }>(
+    `select ny_ordre from public.smartdok_pdf_sending where kode = 'nyord1'`,
+  );
+  assert.equal(r.rows[0].ny_ordre, true);
+  await assert.rejects(
+    db.exec(`update public.smartdok_pdf_sending set ny_ordre = false where kode = 'nyord1'`),
+    /permission denied/,
+  );
+  await assert.rejects(
+    db.exec(`insert into public.smartdok_pdf_sending (kode, prosjekt, timer_ider, status, ny_ordre)
+             values ('nyord2', 'P', '{4}', 'startet', true)`),
+    /permission denied/,
+  );
+});
+
 test("bruker uten tilgang ser ingen sendinger", async () => {
   await seedSending();
   await somBruker(false);
