@@ -42,21 +42,20 @@ create policy "tilgang endrer kobling" on public.smartdok_pdf_produktkobling
   using (public.smartdok_pdf_har_tilgang())
   with check (public.smartdok_pdf_har_tilgang());
 
--- Trigger: stempler hvem som endret, og logger endringen i hendelseslogg.
--- Security definer fordi authenticated ikke har skriverett på hendelseslogg.
+-- To triggere, fordi en upsert (insert ... on conflict do update) kjører BEFORE INSERT
+-- også når raden finnes, og en logg der ville fått en innsetting med fra = null i
+-- tillegg til endringen. AFTER-triggerne kjøres bare for det som faktisk skjedde.
+--
+-- BEFORE: stempler hvem som endret og når. Ingen logging her.
 -- search_path er låst så ingen kan skygge tabellene med egne objekter.
--- Logging er en del av revisjonskravet: feiler den, skal skrivingen feile.
 create or replace function public.smartdok_pdf_kobling_endret()
 returns trigger
 language plpgsql
 security definer
 set search_path = public, pg_temp
 as $$
-declare
-  fra jsonb;
-  til jsonb;
 begin
-  -- En oppdatering som ikke endrer noe gir ingen loggrad og ingen ny stempling.
+  -- En oppdatering som ikke endrer noe, gir ingen ny stempling (og ingen loggrad, se under).
   if tg_op = 'UPDATE' and (old.faktureres, old.produkt_id, old.produktnummer,
       old.produktnavn, old.maskinnavn) is not distinct from
      (new.faktureres, new.produkt_id, new.produktnummer,
@@ -69,6 +68,37 @@ begin
   -- Alltid brukeren som faktisk skriver, aldri en verdi klienten sender med.
   new.endret_av := auth.uid();
   new.endret := now();
+  return new;
+end;
+$$;
+
+revoke execute on function public.smartdok_pdf_kobling_endret() from public, anon, authenticated;
+
+drop trigger if exists smartdok_pdf_kobling_endret on public.smartdok_pdf_produktkobling;
+create trigger smartdok_pdf_kobling_endret
+  before insert or update on public.smartdok_pdf_produktkobling
+  for each row execute function public.smartdok_pdf_kobling_endret();
+
+-- AFTER: logger endringen i hendelseslogg med fra = OLD (null ved innsetting).
+-- Security definer fordi authenticated ikke har skriverett på hendelseslogg.
+-- Logging er en del av revisjonskravet: feiler den, skal skrivingen feile.
+create or replace function public.smartdok_pdf_kobling_logg()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  fra jsonb;
+  til jsonb;
+begin
+  -- Bare stemplingen (eller ingenting) endret: ingen loggrad.
+  if tg_op = 'UPDATE' and (old.faktureres, old.produkt_id, old.produktnummer,
+      old.produktnavn, old.maskinnavn) is not distinct from
+     (new.faktureres, new.produkt_id, new.produktnummer,
+      new.produktnavn, new.maskinnavn) then
+    return null;
+  end if;
 
   til := jsonb_build_object(
     'faktureres', new.faktureres,
@@ -95,16 +125,16 @@ begin
     jsonb_build_object('maskin_id', new.maskin_id, 'maskinnavn', new.maskinnavn,
                        'fra', fra, 'til', til)
   );
-  return new;
+  return null;
 end;
 $$;
 
-revoke execute on function public.smartdok_pdf_kobling_endret() from public, anon, authenticated;
+revoke execute on function public.smartdok_pdf_kobling_logg() from public, anon, authenticated;
 
-drop trigger if exists smartdok_pdf_kobling_endret on public.smartdok_pdf_produktkobling;
-create trigger smartdok_pdf_kobling_endret
-  before insert or update on public.smartdok_pdf_produktkobling
-  for each row execute function public.smartdok_pdf_kobling_endret();
+drop trigger if exists smartdok_pdf_kobling_logg on public.smartdok_pdf_produktkobling;
+create trigger smartdok_pdf_kobling_logg
+  after insert or update on public.smartdok_pdf_produktkobling
+  for each row execute function public.smartdok_pdf_kobling_logg();
 
 create table if not exists public.smartdok_pdf_sending (
   id            bigserial primary key,

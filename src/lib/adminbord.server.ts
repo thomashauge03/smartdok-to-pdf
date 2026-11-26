@@ -2,7 +2,7 @@ import process from "node:process";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { feilSvar, GENERELL_FEIL, IKKE_SATT_OPP, normaliserAdminbordUrl, UTLOGGET } from "./adminbord-svar.ts";
+import { feilSvar, GENERELL_FEIL, IKKE_SATT_OPP, normaliserAdminbordUrl, skrivefeilSvar, UTLOGGET } from "./adminbord-svar.ts";
 import type { Feil } from "./adminbord-svar.ts";
 import { feilmelding } from "./innlogging.ts";
 
@@ -25,7 +25,9 @@ export async function krevTilgang(): Promise<{ supabase: SupabaseClient } | Feil
   return { supabase };
 }
 
-export type AdminbordInit = { sok?: URLSearchParams | null; body?: unknown };
+// `skriving`: kallet kan ha endret noe i Tripletex eller SmartDok. Da tolkes en feil
+// uten adminbordets egen forklaring som ukjent utfall (skrivefeilSvar).
+export type AdminbordInit = { sok?: URLSearchParams | null; body?: unknown; skriving?: boolean };
 
 // Felles løp for alle kall til adminbordet. Returnerer enten en feil eller den
 // rå JSON-en. Med body brukes POST med JSON, ellers GET.
@@ -67,7 +69,7 @@ export async function kallAdminbord(sti: string, init: AdminbordInit = {}): Prom
     } catch {
       // Ikke JSON; bruk den generelle meldingen.
     }
-    return feilSvar(res.status, tekst);
+    return init.skriving ? skrivefeilSvar(res.status, tekst) : feilSvar(res.status, tekst);
   }
   return { json: await res.json() };
 }

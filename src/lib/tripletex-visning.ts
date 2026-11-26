@@ -125,19 +125,27 @@ export function gjeldendeStatus(status: string, endret: string | null, naa: numb
 
 /**
  * Hvilke knapper en sending får. Serveren avgjør likevel; dette er bare hva som vises.
- * «Merk som sendt» etter ukjent utfall godtas bare på en ordre sendingen selv laget
- * (adminbordets kanMerke), så på en eksisterende ordre vises den ikke.
+ * «Merk som sendt» etter ukjent utfall på en eksisterende ordre godtar adminbordet
+ * (kanMerke) bare med bekreftetLinjer: vi kan ikke se om våre linjer kom inn blant
+ * dem som sto der fra før, så et menneske må ha sett dem (`bekreftLinjer`).
+ * Null for ny_ordre regnes som eksisterende ordre, som hos adminbordet.
  */
 export function handlinger(
   status: string,
   nyOrdre: boolean | null = null,
-): { fjernMerke: boolean; avklar: boolean; merk: boolean } {
+): { fjernMerke: boolean; avklar: boolean; merk: boolean; bekreftLinjer: boolean } {
   const avklar = ["ukjent_utfall", "sendt_uten_merke"].includes(status);
   return {
     fjernMerke: ["sendt", "sendt_uten_vedlegg", "sendt_uten_merke"].includes(status),
     avklar,
-    merk: status === "sendt_uten_merke" || (status === "ukjent_utfall" && nyOrdre === true),
+    merk: avklar,
+    bekreftLinjer: status === "ukjent_utfall" && nyOrdre !== true,
   };
+}
+
+/** Det brukeren bekrefter før «Merk som sendt» på en eksisterende ordre etter ukjent utfall. */
+export function bekreftLinjerTekst(ordrenummer: string | null): string {
+  return `Jeg har sett at linjene står på ${ordrenummer ? `ordre ${ordrenummer}` : "ordren"} i Tripletex.`;
 }
 
 /** Teksten i bekreftelsen før «Frigi timene». */
@@ -182,7 +190,8 @@ export function sendingSperre(
  * Hvilken knapp som fremheves etter «Sjekk i Tripletex». Speiler adminbordets
  * kanMerke(): merk bare når ordren sikkert har linjene (sendt_uten_merke, eller
  * en ny ordre fra sendingen med linjer). Ingen ordre funnet: frigi. En
- * eksisterende ordre må et menneske se på: ingen anbefaling. Serveren avgjør likevel.
+ * eksisterende ordre må et menneske se på (merk krever bekreftelse): ingen
+ * anbefaling. Serveren avgjør likevel.
  */
 export function anbefaltAvklaring(
   status: string,
@@ -240,7 +249,13 @@ export function skjulteFaktureringskolonner(
   return ut;
 }
 
-/** Tripletex-verdiene («Ordre 1234») på rader som skal merkes, men alt er sendt. */
+/**
+ * «Ordre <nr>» er formen vårt eget merke vises med i Tripletex-kolonnen (byggTabell).
+ * Bare den betyr sendt herfra; fremmede merker vises som de er og stopper ingenting.
+ */
+export const erSendtHerfra = (verdi: string) => /^Ordre \S+$/.test(verdi.trim());
+
+/** Tripletex-verdiene («Ordre 1234») på rader som skal merkes, men alt er sendt herfra. */
 export function alleredeSendte(rows: Row[], tripletexKey: string | undefined, timerIder: number[]): string[] {
   if (!tripletexKey) return [];
   const ider = new Set(timerIder);
@@ -249,7 +264,7 @@ export function alleredeSendte(rows: Row[], tripletexKey: string | undefined, ti
     const id = Number((r["__id"] ?? "").trim());
     if (!ider.has(id)) continue;
     const v = (r[tripletexKey] ?? "").trim();
-    if (v !== "" && v !== "Ikke sendt") ut.add(v);
+    if (erSendtHerfra(v)) ut.add(v);
   }
   return [...ut];
 }
@@ -285,7 +300,7 @@ export function vurderForhandsvisning(
       id: "alleredeSendt",
       tekst:
         `Noen av radene er alt sendt til Tripletex (${ekstra.alleredeSendt.join(", ")}). ` +
-        "Ta dem bort med filteret på Tripletex-kolonnen («Ikke sendt») før du sender.",
+        "Ta dem bort med filteret på Tripletex-kolonnen (fjern «Ordre …»-verdiene) før du sender.",
     });
   }
   if (b.linjer.length === 0 && sperrer.length === 0) {
@@ -295,10 +310,24 @@ export function vurderForhandsvisning(
     });
   }
 
+  if (a.alleredeFakturert > 0) {
+    advarsler.push({
+      id: "alleredeFakturert",
+      tekst: `${timer(a.alleredeFakturert)} (maskin eller overtid) er alt fakturert i SmartDok og blir ikke lagt på ordren igjen. De står i PDF-en.`,
+    });
+  }
   if (a.utenMaskin > 0) {
     advarsler.push({
       id: "utenMaskin",
-      tekst: `${timer(a.utenMaskin)} uten fakturerbar maskin blir ikke ordrelinjer. De står i PDF-en, men faktureres ikke og merkes ikke som sendt.`,
+      tekst: `${timer(a.utenMaskin)} uten fakturerbar maskin blir ikke lagt på ordren og merkes ikke som sendt. De står i PDF-en.`,
+    });
+  }
+  if (a.overtidUtenMaskin > 0) {
+    advarsler.push({
+      id: "overtidUtenMaskin",
+      tekst:
+        `${timer(a.overtidUtenMaskin)} overtid står på rader uten fakturerbar maskin. Overtid faktureres bare som tillegg ` +
+        "til maskintimer, så den blir ikke lagt på ordren og merkes ikke som sendt. Legg den inn for hånd i Tripletex om den skal faktureres.",
     });
   }
   if (a.haandlagde > 0) {

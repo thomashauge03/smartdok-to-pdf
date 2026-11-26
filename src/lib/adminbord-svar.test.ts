@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { feilSvar, normaliserAdminbordUrl, somSkrivefeil, TIDSAVBRUDD, UKJENT_UTFALL_FEIL, uventet, uventetSkriving, UTLOGGET, GENERELL_FEIL } from "./adminbord-svar.ts";
+import { feilSvar, normaliserAdminbordUrl, skrivefeilSvar, somSkrivefeil, TIDSAVBRUDD, UKJENT_UTFALL_FEIL, uventet, uventetSkriving, UTLOGGET, GENERELL_FEIL } from "./adminbord-svar.ts";
 import { feilmelding } from "./innlogging.ts";
 
 test("401 gir loggInn", () => {
@@ -55,4 +55,22 @@ test("lesing beholder tidsavbruddmeldingen", () => {
   const e = uventet(Object.assign(new Error("t"), { name: "TimeoutError" }));
   assert.equal(e.feil, TIDSAVBRUDD);
   assert.equal(e.ukjentUtfall, undefined);
+});
+
+test("skriving: 5xx uten JSON-feil gir ukjent utfall", () => {
+  for (const status of [500, 502, 503, 504]) {
+    assert.deepEqual(skrivefeilSvar(status, null), { ok: false, feil: UKJENT_UTFALL_FEIL, ukjentUtfall: true }, String(status));
+    assert.deepEqual(skrivefeilSvar(status, "  "), { ok: false, feil: UKJENT_UTFALL_FEIL, ukjentUtfall: true }, String(status));
+  }
+});
+
+test("skriving: adminbordets egen feiltekst og 4xx beholdes", () => {
+  // Adminbordet svarer selv med {feil} når det vet at ingenting er gjort (f.eks. SmartDok avviste).
+  assert.deepEqual(skrivefeilSvar(502, "SmartDok tok ikke imot merket. Prøv igjen."), {
+    ok: false,
+    feil: "SmartDok tok ikke imot merket. Prøv igjen.",
+  });
+  assert.deepEqual(skrivefeilSvar(409, "Ordren er stengt."), { ok: false, feil: "Ordren er stengt." });
+  assert.deepEqual(skrivefeilSvar(400, null), { ok: false, feil: GENERELL_FEIL });
+  assert.deepEqual(skrivefeilSvar(401, null), UTLOGGET);
 });

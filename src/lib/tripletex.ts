@@ -65,7 +65,13 @@ export const leggPaaOrdreInn = z.object({
 export type LeggPaaOrdreInn = z.infer<typeof leggPaaOrdreInn>;
 
 export const fjernMerkeInn = z.object({ kode: kodeSkjema });
-export const avklarInn = z.object({ kode: kodeSkjema, valg: z.enum(["sjekk", "frigi", "merk"]) });
+// bekreftetLinjer: brukeren har sett linjene på en eksisterende ordre i Tripletex.
+// Adminbordet godtar «merk» etter ukjent utfall på en eksisterende ordre bare med den.
+export const avklarInn = z.object({
+  kode: kodeSkjema,
+  valg: z.enum(["sjekk", "frigi", "merk"]),
+  bekreftetLinjer: z.boolean().optional(),
+});
 
 export const lagreKoblingInn = z
   .object({

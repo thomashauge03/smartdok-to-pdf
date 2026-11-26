@@ -208,6 +208,37 @@ test("skjulte nøkler __id og __maskin<i> er ikke i columns", () => {
   assert.ok(!t.columns.some((c) => c.key.startsWith("__")));
 });
 
+test("skjulte __fakt-nøkler: fakturert maskin per plass og fakturert tillegg per kolonne", () => {
+  const t = byggTabell([
+    arbeid({ id: 1 }),
+    maskin({ id: 1, maskinId: 11, fakturert: true }),
+    maskin({ id: 1, maskinId: 12 }),
+    tillegg({ id: 1, mengde: 1, fakturert: true }),
+    tillegg({ id: 1, mengde: 1 }),
+    tillegg({ id: 1, lonnsart: "Overtid 100%", mengde: 1 }),
+    arbeid({ id: 2 }),
+    maskin({ id: 2, maskinId: 11 }),
+  ], prosjekt, periode);
+  const kol = (label: string) => t.columns.find((c) => c.label === label)!.key;
+  const [r1, r2] = t.rows;
+  assert.equal(r1["__fakt_maskin1"], "1");
+  assert.notEqual(r1["__fakt_maskin2"], "1");
+  // Ett av to tillegg i samme kolonne er fakturert: hele cellen regnes som fakturert.
+  assert.equal(r1[`__fakt_${kol("Overtid 50%")}`], "1");
+  assert.notEqual(r1[`__fakt_${kol("Overtid 100%")}`], "1");
+  assert.notEqual(r2["__fakt_maskin1"], "1");
+  assert.ok(!t.columns.some((c) => c.key.startsWith("__")));
+});
+
+test("Tripletex-kolonnen: et fremmed merke som ligner vårt, kan ikke forveksles med «Ordre <nr>»", () => {
+  const t = byggTabell([arbeid({ id: 1, eksterntMerke: "Ordre 77" }), arbeid({ id: 2, eksterntMerke: "Eksportert" })], prosjekt, periode);
+  const k = t.tripletexKey!;
+  const verdier = t.rows.map((r) => r[k]);
+  assert.ok(!verdier[0].startsWith("Ordre "), verdier[0]);
+  assert.match(verdier[0], /Ordre 77/);
+  assert.equal(verdier[1], "Eksportert");
+});
+
 test("foreldreløs gruppe har __id og henter merke fra første ikke-null", () => {
   const t = byggTabell([
     tillegg({ id: 9 }),

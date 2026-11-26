@@ -56,6 +56,11 @@ test("kode må være seks tegn a-z og 0-9", () => {
   }
   assert.ok(avklarInn.safeParse({ kode: "ab12cd", valg: "frigi" }).success);
   assert.ok(!avklarInn.safeParse({ kode: "ab12cd", valg: "slett" }).success);
+  // Bekreftelsen er valgfri, men må være en ekte boolean når den er med.
+  assert.deepEqual(avklarInn.parse({ kode: "ab12cd", valg: "merk", bekreftetLinjer: true }), {
+    kode: "ab12cd", valg: "merk", bekreftetLinjer: true,
+  });
+  assert.ok(!avklarInn.safeParse({ kode: "ab12cd", valg: "merk", bekreftetLinjer: "true" }).success);
 });
 
 test("en maskin som faktureres må ha produkt", () => {

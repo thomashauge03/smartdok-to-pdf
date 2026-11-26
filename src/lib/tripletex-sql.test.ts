@@ -279,6 +279,57 @@ test("oppdatering uten endring logger ikke", async () => {
   assert.equal(r.rows.length, 1);
 });
 
+const UPSERT = `insert into public.smartdok_pdf_produktkobling
+    (maskin_id, maskinnavn, faktureres, produkt_id, produktnummer, produktnavn)
+  values ($1, $2, $3, $4, $5, $6)
+  on conflict (maskin_id) do update set
+    maskinnavn = excluded.maskinnavn, faktureres = excluded.faktureres, produkt_id = excluded.produkt_id,
+    produktnummer = excluded.produktnummer, produktnavn = excluded.produktnavn`;
+
+test("upsert på en eksisterende kobling logger én gang, med den virkelige fra-verdien", async () => {
+  await somBruker(true);
+  await db.query(UPSERT, [30, "Gravemaskin", true, 1, "A", "Produkt A"]);
+  await db.query(UPSERT, [30, "Gravemaskin", true, 2, "B", "Produkt B"]);
+  await db.exec(`reset role`);
+  const r = await db.query<{ detaljer: { fra: { produkt_id: number } | null; til: { produkt_id: number } } }>(
+    `select detaljer from public.hendelseslogg order by id`,
+  );
+  assert.equal(r.rows.length, 2, "én rad for innsettingen og én for endringen");
+  assert.equal(r.rows[0].detaljer.fra, null);
+  assert.equal(r.rows[0].detaljer.til.produkt_id, 1);
+  assert.equal(r.rows[1].detaljer.fra?.produkt_id, 1);
+  assert.equal(r.rows[1].detaljer.til.produkt_id, 2);
+});
+
+test("upsert uten endring logger ikke og beholder stemplingen", async () => {
+  await somBruker(true);
+  await db.query(UPSERT, [31, "Dumper", false, null, null, null]);
+  await db.exec(`reset role`);
+  const før = await db.query<{ endret: string }>(`select endret::text from public.smartdok_pdf_produktkobling where maskin_id = 31`);
+  await somBruker(true, ANNEN);
+  await db.query(UPSERT, [31, "Dumper", false, null, null, null]);
+  await db.exec(`reset role`);
+  const r = await db.query(`select 1 from public.hendelseslogg`);
+  assert.equal(r.rows.length, 1);
+  const k = await db.query<{ endret_av: string; endret: string }>(
+    `select endret_av, endret::text from public.smartdok_pdf_produktkobling where maskin_id = 31`,
+  );
+  assert.equal(k.rows[0].endret_av, BRUKER);
+  assert.equal(k.rows[0].endret, før.rows[0].endret);
+});
+
+test("loggingen ligger i en AFTER-trigger og stemplingen i en BEFORE-trigger", async () => {
+  const r = await db.query<{ tgname: string; before: boolean }>(`
+    select tgname, (tgtype & 2) <> 0 as before
+    from pg_trigger
+    where tgrelid = 'public.smartdok_pdf_produktkobling'::regclass and not tgisinternal
+    order by tgname`);
+  assert.deepEqual(r.rows, [
+    { tgname: "smartdok_pdf_kobling_endret", before: true },
+    { tgname: "smartdok_pdf_kobling_logg", before: false },
+  ]);
+});
+
 test("anon og authenticated har ikke rettigheter på sekvensen til sending", async () => {
   await somBruker(true);
   await assert.rejects(

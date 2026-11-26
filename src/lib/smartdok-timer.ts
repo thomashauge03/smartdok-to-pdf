@@ -42,7 +42,10 @@ const rund = (n: number) => Math.round(n * 1000) / 1000;
 function tripletexVisning(merke: string | null): string {
   if (merke === null) return "Ikke sendt";
   const m = merke.match(/^Tripletex ordre (\S+)/);
-  return m ? `Ordre ${m[1]}` : merke;
+  if (m) return `Ordre ${m[1]}`;
+  // «Ordre <nr>» betyr sendt herfra (filteret og sperren ser bare på den formen).
+  // Et fremmed merke som tilfeldigvis starter likt, får en forstavelse så det ikke forveksles.
+  return /^ordre /i.test(merke) ? `Merke: ${merke}` : merke;
 }
 
 type Gruppe = {
@@ -160,6 +163,12 @@ export function byggTabell(
     // Skjulte nøkler (ikke i columns): id-ene brukes når appen sender timene til Tripletex.
     row["__id"] = String(h.id);
     g.maskiner.forEach((m, i) => { row[`__maskin${i + 1}`] = m.maskinId === null ? "" : String(m.maskinId); });
+    // Fakturert i SmartDok per maskinplass og per tilleggskolonne: de timene er alt fakturert
+    // og skal ikke på ordren igjen. Fakturert-kolonnen sier bare noe om hele raden («Delvis»).
+    g.maskiner.forEach((m, i) => { if (m.fakturert) row[`__fakt_maskin${i + 1}`] = "1"; });
+    // Ett fakturert tillegg i en kolonne gjør hele cellen fakturert: cellen er én sum,
+    // og å fakturere den på nytt er verre enn at noe må legges inn for hånd.
+    for (const t of g.tillegg) if (t.fakturert) row[`__fakt_${tilleggNokkel.get(t.lonnsart)!}`] = "1";
     return row;
   });
 

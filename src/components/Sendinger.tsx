@@ -12,6 +12,7 @@ import {
 import { avklarSending, fjernMerke, hentSendinger, type AvklarSvar, type Sending } from "@/lib/tripletex.functions";
 import {
   anbefaltAvklaring,
+  bekreftLinjerTekst,
   frigiTekst,
   gjeldendeStatus,
   handlinger,
@@ -125,7 +126,7 @@ export function Sendinger({
   );
 }
 
-type Steg = null | "fjern1" | "fjern2" | "frigi";
+type Steg = null | "fjern1" | "fjern2" | "frigi" | "merk";
 type Arbeid = null | "fjern" | "sjekk" | "merk" | "frigi";
 
 function SendingKort({
@@ -147,10 +148,12 @@ function SendingKort({
   const [sjekk, setSjekk] = useState<Sjekk | null>(null);
   const [feil, setFeil] = useState<Feil | null>(null);
   const [melding, setMelding] = useState<string | null>(null);
+  const [harSett, setHarSett] = useState(false);
   const opptatt = useRef(false);
   const ordre = s.ordrenummer ? `ordre ${s.ordrenummer}` : "ordren";
 
-  const kjor = async (hva: Exclude<Arbeid, null>) => {
+  // bekreftetLinjer sendes bare med «merk» etter at brukeren har krysset av for at linjene står på ordren.
+  const kjor = async (hva: Exclude<Arbeid, null>, bekreftetLinjer = false) => {
     if (opptatt.current) return;
     opptatt.current = true;
     setArbeid(hva);
@@ -162,7 +165,7 @@ function SendingKort({
       const svar =
         hva === "fjern"
           ? await fjernMerke({ data: { kode: s.kode } })
-          : await avklarSending({ data: { kode: s.kode, valg: hva } });
+          : await avklarSending({ data: { kode: s.kode, valg: hva, ...(bekreftetLinjer ? { bekreftetLinjer: true } : {}) } });
       if (!svar.ok) {
         setFeil({ feil: svar.feil, loggInn: !!svar.loggInn, ukjentUtfall: !!svar.ukjentUtfall });
         // Etter en skriving med ukjent utfall kan statusen ha endret seg.
@@ -267,7 +270,7 @@ function SendingKort({
               {sjekk.antallLinjer} {sjekk.antallLinjer === 1 ? "linje" : "linjer"}.{" "}
               {sjekk.nyOrdre
                 ? "Ordren ble laget av denne sendingen."
-                : "Det er en eksisterende ordre: se selv på ordren i Tripletex om linjene fra sendingen står der. Står de der, merk timene for hånd i SmartDok; mangler de, frigi timene."}
+                : "Det er en eksisterende ordre: se selv på ordren i Tripletex om linjene fra sendingen står der. Står de der, trykk «Merk som sendt» og bekreft at du har sett dem; mangler de, frigi timene."}
             </p>
           ) : (
             <p>
@@ -276,13 +279,19 @@ function SendingKort({
             </p>
           )}
           <div className={`flex flex-wrap gap-2 ${steg === null ? "" : "hidden"}`}>
-            {/* Adminbordet godtar aldri «merk» etter ukjent utfall på en eksisterende ordre. */}
-            {kan.merk && (
+            {/* På en eksisterende ordre godtar adminbordet «merk» etter ukjent utfall bare med
+                bekreftelse, og aldri når ordren ikke er funnet eller er tom: da vises knappen ikke. */}
+            {kan.merk && (!kan.bekreftLinjer || (sjekk.funnet && sjekk.antallLinjer > 0)) && (
               <button
                 type="button"
                 className={`${anbefalt === "merk" ? knappMork : knappLys} py-1.5 text-xs`}
                 disabled={travel}
-                onClick={() => void kjor("merk")}
+                onClick={() => {
+                  if (kan.bekreftLinjer) {
+                    setHarSett(false);
+                    setSteg("merk");
+                  } else void kjor("merk");
+                }}
               >
                 {arbeid === "merk" ? (
                   <>
@@ -338,6 +347,29 @@ function SendingKort({
           onNei={() => setSteg(null)}
         />
       )}
+      {steg === "merk" && (
+        <Bekreft
+          tekst={
+            <>
+              <strong>Merke timene som sendt?</strong> Gjør det bare når du har sett linjene fra denne sendingen på ordren i
+              Tripletex. Står de ikke der, blir timene ikke fakturert.
+              <label className="mt-2 flex items-start gap-2 font-medium">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={harSett}
+                  onChange={(e) => setHarSett(e.target.checked)}
+                />
+                {bekreftLinjerTekst(sjekk?.ordrenummer ?? s.ordrenummer)}
+              </label>
+            </>
+          }
+          ja="Merk som sendt"
+          jaAv={!harSett}
+          onJa={() => void kjor("merk", true)}
+          onNei={() => setSteg(null)}
+        />
+      )}
       {steg === "frigi" && (
         <Bekreft
           fare
@@ -372,22 +404,25 @@ function Bekreft({
   onJa,
   onNei,
   fare = false,
+  jaAv = false,
 }: {
   tekst: ReactNode;
   ja: string;
   onJa: () => void;
   onNei: () => void;
   fare?: boolean;
+  /** Ja-knappen er av til noe er krysset av (f.eks. at linjene er sett i Tripletex). */
+  jaAv?: boolean;
 }) {
   return (
     <div role="group" aria-label="Bekreft" className="mt-3 space-y-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-950">
-      <p aria-live="polite">{tekst}</p>
+      <div aria-live="polite">{tekst}</div>
       <div className="flex flex-wrap gap-2">
         {/* Fokus på «Avbryt»: et ekstra Enter skal ikke bekrefte noe. */}
         <button type="button" className={`${knappLys} py-1.5 text-xs`} onClick={onNei} autoFocus>
           Avbryt
         </button>
-        <button type="button" className={`${fare ? knappFare : knappMork} py-1.5 text-xs`} onClick={onJa}>
+        <button type="button" className={`${fare ? knappFare : knappMork} py-1.5 text-xs`} onClick={onJa} disabled={jaAv}>
           {ja}
         </button>
       </div>

@@ -55,6 +55,17 @@ export function somSkrivefeil(f: Feil): Feil {
   return f.feil === TIDSAVBRUDD ? { ok: false, feil: UKJENT_UTFALL_FEIL, ukjentUtfall: true } : f;
 }
 
+/**
+ * Feilstatus på en skriving. En 5xx uten adminbordets egen {feil}-tekst kommer fra
+ * noe foran adminbordet (proxy, plattform, krasj midt i): da vet vi ikke hvor langt
+ * sendingen kom, og det skal behandles som ukjent utfall, ikke som «ingenting skjedde».
+ * Med egen tekst har adminbordet selv avgjort utfallet, og meldingen gjelder.
+ */
+export function skrivefeilSvar(status: number, adminbordFeil: string | null): Feil {
+  if (status >= 500 && !adminbordFeil?.trim()) return { ok: false, feil: UKJENT_UTFALL_FEIL, ukjentUtfall: true };
+  return somSkrivefeil(feilSvar(status, adminbordFeil));
+}
+
 /** Svaret kom, men var uleselig: også her vet vi ikke hva som ble gjort. */
 export function skjemaFeilSkriving(error: { issues: { path: PropertyKey[] }[] }): Feil {
   skjemaFeil(error);

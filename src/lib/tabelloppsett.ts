@@ -11,11 +11,26 @@ export type Tabelloppsett = {
   colWidths: Record<ColKey, number>;
 };
 
-/** Filtrene som gjelder rett etter en henting fra SmartDok. */
-export function forhandsfiltre(p: Pick<Parsed, "fakturertKey" | "tripletexKey">): Record<string, Set<string>> {
+/**
+ * Filtrene som gjelder rett etter en henting fra SmartDok.
+ *
+ * Tripletex: bare «Ordre <nr>» (vårt eget merke) betyr sendt herfra og skjules.
+ * Fremmede merker («Eksportert», andre systemer) vises som før, så PDF-en får
+ * med de samme timene som i dag. «Ikke sendt» er alltid med: et tomt sett betyr
+ * «ingen filter» og ville vist de sendte radene når alt er sendt.
+ */
+export function forhandsfiltre(p: Pick<Parsed, "fakturertKey" | "tripletexKey" | "rows">): Record<string, Set<string>> {
+  const tk = p.tripletexKey;
   return {
     ...(p.fakturertKey ? { [p.fakturertKey]: new Set(["Nei", "Delvis"]) } : {}),
-    ...(p.tripletexKey ? { [p.tripletexKey]: new Set(["Ikke sendt"]) } : {}),
+    ...(tk
+      ? {
+          [tk]: new Set([
+            "Ikke sendt",
+            ...p.rows.map((r) => r[tk] ?? "").filter((v) => v !== "" && !v.startsWith("Ordre ")),
+          ]),
+        }
+      : {}),
   };
 }
 

@@ -93,7 +93,7 @@ export const leggPaaOrdre = createServerFn({ method: "POST" })
     if (pdfForStor(data.pdf)) return { ok: false, feil: PDF_FOR_STOR };
     try {
       const { kallAdminbord } = await import("./adminbord.server");
-      const r = await kallAdminbord("/api/smartdok-pdf/legg-paa-ordre", { body: data });
+      const r = await kallAdminbord("/api/smartdok-pdf/legg-paa-ordre", { body: data, skriving: true });
       if (!("json" in r)) return somSkrivefeil(r);
       const p = leggPaaOrdreSvar.safeParse(r.json);
       if (!p.success) return skjemaFeilSkriving(p.error);
@@ -108,7 +108,7 @@ export const fjernMerke = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<Svar<{ resultat: StatusSvar }>> => {
     try {
       const { kallAdminbord } = await import("./adminbord.server");
-      const r = await kallAdminbord("/api/smartdok-pdf/fjern-merke", { body: data });
+      const r = await kallAdminbord("/api/smartdok-pdf/fjern-merke", { body: data, skriving: true });
       if (!("json" in r)) return somSkrivefeil(r);
       const p = statusSvar.safeParse(r.json);
       if (!p.success) return skjemaFeilSkriving(p.error);
@@ -125,7 +125,7 @@ export const avklarSending = createServerFn({ method: "POST" })
     const skriver = erSkriving(data.valg);
     try {
       const { kallAdminbord } = await import("./adminbord.server");
-      const r = await kallAdminbord("/api/smartdok-pdf/avklar", { body: data });
+      const r = await kallAdminbord("/api/smartdok-pdf/avklar", { body: data, skriving: skriver });
       if (!("json" in r)) return skriver ? somSkrivefeil(r) : r;
       const p = avklarSvar.safeParse(r.json);
       if (!p.success) return skriver ? skjemaFeilSkriving(p.error) : skjemaFeil(p.error);

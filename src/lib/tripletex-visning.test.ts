@@ -8,6 +8,7 @@ import {
   anbefaltAvklaring,
   angreInn,
   frigiTekst,
+  bekreftLinjerTekst,
   sendingSperre,
   UAVKLART_SPERRE,
   byggLeggPaaOrdre,
@@ -31,7 +32,7 @@ import {
 const tomBeregning = (o: Partial<Ordreberegning> = {}): Ordreberegning => ({
   linjer: [{ produktId: 1, produktnavn: "Grunnarbeider", antall: 7.5, tekst: "Grunnarbeider – arbeid utført iht. vedlegg", listepris: 800 }],
   timerIder: [10, 11],
-  advarsler: { utenMaskin: 0, haandlagde: 0, utenKobling: [], utenPris: [], ukjentOvertid: [] },
+  advarsler: { utenMaskin: 0, haandlagde: 0, utenKobling: [], utenPris: [], ukjentOvertid: [], overtidUtenMaskin: 0, alleredeFakturert: 0 },
   ...o,
 });
 
@@ -102,19 +103,24 @@ test("gjeldendeStatus: startet over ti minutter er ukjent utfall", () => {
 });
 
 test("handlinger speiler adminbordets lovlige overganger", () => {
-  assert.deepEqual(handlinger("sendt"), { fjernMerke: true, avklar: false, merk: false });
-  assert.deepEqual(handlinger("sendt_uten_vedlegg"), { fjernMerke: true, avklar: false, merk: false });
-  assert.deepEqual(handlinger("sendt_uten_merke", false), { fjernMerke: true, avklar: true, merk: true });
-  assert.deepEqual(handlinger("ukjent_utfall", true), { fjernMerke: false, avklar: true, merk: true });
+  assert.deepEqual(handlinger("sendt"), { fjernMerke: true, avklar: false, merk: false, bekreftLinjer: false });
+  assert.deepEqual(handlinger("sendt_uten_vedlegg"), { fjernMerke: true, avklar: false, merk: false, bekreftLinjer: false });
+  assert.deepEqual(handlinger("sendt_uten_merke", false), { fjernMerke: true, avklar: true, merk: true, bekreftLinjer: false });
+  assert.deepEqual(handlinger("ukjent_utfall", true), { fjernMerke: false, avklar: true, merk: true, bekreftLinjer: false });
   for (const s of ["angret", "feilet", "startet"]) {
-    assert.deepEqual(handlinger(s, true), { fjernMerke: false, avklar: false, merk: false });
+    assert.deepEqual(handlinger(s, true), { fjernMerke: false, avklar: false, merk: false, bekreftLinjer: false });
   }
 });
 
-test("handlinger: «Merk som sendt» skjules etter ukjent utfall på en eksisterende ordre", () => {
-  assert.equal(handlinger("ukjent_utfall", false).merk, false);
-  assert.equal(handlinger("ukjent_utfall", null).merk, false);
-  assert.equal(handlinger("ukjent_utfall", false).avklar, true);
+test("handlinger: «Merk som sendt» etter ukjent utfall på en eksisterende ordre krever bekreftelse", () => {
+  for (const ny of [false, null]) {
+    assert.deepEqual(handlinger("ukjent_utfall", ny), { fjernMerke: false, avklar: true, merk: true, bekreftLinjer: true });
+  }
+});
+
+test("bekreftLinjerTekst: brukeren bekrefter det hun har sett på ordren", () => {
+  assert.equal(bekreftLinjerTekst("10240"), "Jeg har sett at linjene står på ordre 10240 i Tripletex.");
+  assert.equal(bekreftLinjerTekst(null), "Jeg har sett at linjene står på ordren i Tripletex.");
 });
 
 test("frigiTekst: sendt uten merke sier at linjene står på ordren", () => {
@@ -162,14 +168,25 @@ test("anbefaltAvklaring fremhever bare det adminbordet godtar", () => {
 test("vurderForhandsvisning: uten kobling og uten pris sperrer, resten er advarsler", () => {
   const v = vurderForhandsvisning(
     tomBeregning({
-      advarsler: { utenMaskin: 3.5, haandlagde: 2, utenKobling: ["Cat 324"], utenPris: ["Grunnarbeider"], ukjentOvertid: ["Overtid 70%"] },
+      advarsler: {
+        utenMaskin: 3.5, haandlagde: 2, utenKobling: ["Cat 324"], utenPris: ["Grunnarbeider"], ukjentOvertid: ["Overtid 70%"],
+        overtidUtenMaskin: 2, alleredeFakturert: 1.5,
+      },
     }),
     { alleredeSendt: [], skjulteKolonner: ["Maskintimer2"] },
   );
   assert.deepEqual(v.sperrer.map((m) => m.id), ["utenKobling", "utenPris"]);
-  assert.deepEqual(v.advarsler.map((m) => m.id), ["utenMaskin", "haandlagde", "ukjentOvertid", "skjulteKolonner"]);
+  assert.deepEqual(v.advarsler.map((m) => m.id), [
+    "alleredeFakturert", "utenMaskin", "overtidUtenMaskin", "haandlagde", "ukjentOvertid", "skjulteKolonner",
+  ]);
   assert.match(v.sperrer[0].tekst, /«Cat 324»/);
-  assert.match(v.advarsler[0].tekst, /3,5 timer/);
+  const tekst = (id: string) => v.advarsler.find((m) => m.id === id)!.tekst;
+  assert.match(tekst("alleredeFakturert"), /1,5 timer/);
+  assert.match(tekst("alleredeFakturert"), /fakturert i SmartDok/);
+  assert.match(tekst("utenMaskin"), /3,5 timer/);
+  assert.match(tekst("utenMaskin"), /blir ikke lagt på ordren og merkes ikke som sendt/);
+  assert.match(tekst("overtidUtenMaskin"), /2 timer overtid/);
+  assert.match(tekst("overtidUtenMaskin"), /blir ikke lagt på ordren og merkes ikke som sendt/);
 });
 
 test("vurderForhandsvisning: ingen linjer sperrer, og allerede sendte rader sperrer", () => {
@@ -192,6 +209,17 @@ test("alleredeSendte ser bare på rader som skal merkes", () => {
   ];
   assert.deepEqual(alleredeSendte(rows, "tx", [10, 11]), ["Ordre 1234"]);
   assert.deepEqual(alleredeSendte(rows, undefined, [10]), []);
+});
+
+test("alleredeSendte teller bare vårt eget merke («Ordre <nr>»), ikke fremmede merker", () => {
+  const rows = [
+    { __id: "10", tx: "Eksportert" },
+    { __id: "11", tx: "Fiken 9" },
+    { __id: "12", tx: "Merke: Ordre 77" },
+    { __id: "13", tx: "Ordre 4321" },
+  ];
+  assert.deepEqual(alleredeSendte(rows, "tx", [10, 11, 12]), []);
+  assert.deepEqual(alleredeSendte(rows, "tx", [10, 13]), ["Ordre 4321"]);
 });
 
 test("skjulteFaktureringskolonner: «Faktureres ikke» varsles ikke, skjult maskinnavn varsles", () => {

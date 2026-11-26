@@ -16,10 +16,29 @@ const ny = (columns: ColMeta[], populatedCols: string[]): Parsed => ({
 });
 
 test("forhandsfiltre: Fakturert Nei/Delvis og Tripletex Ikke sendt", () => {
-  const f = forhandsfiltre({ fakturertKey: "fakturert", tripletexKey: "tripletex" });
+  const f = forhandsfiltre({ fakturertKey: "fakturert", tripletexKey: "tripletex", rows: [] });
   assert.deepEqual([...f.fakturert], ["Nei", "Delvis"]);
   assert.deepEqual([...f.tripletex], ["Ikke sendt"]);
-  assert.deepEqual(forhandsfiltre({}), {});
+  assert.deepEqual(forhandsfiltre({ rows: [] }), {});
+});
+
+test("forhandsfiltre: Tripletex skjuler bare det som er sendt herfra («Ordre …»), fremmede merker vises", () => {
+  const rows = [
+    { tripletex: "Ordre 1234" },
+    { tripletex: "Ikke sendt" },
+    { tripletex: "Eksportert" },
+    { tripletex: "Fiken 9" },
+    { tripletex: "Merke: Ordre 77" },
+    { tripletex: "Fiken 9" },
+    { tripletex: "Ordre 99" },
+  ];
+  const f = forhandsfiltre({ fakturertKey: "fakturert", tripletexKey: "tripletex", rows });
+  assert.deepEqual([...f.tripletex].sort(), ["Eksportert", "Fiken 9", "Ikke sendt", "Merke: Ordre 77"]);
+});
+
+test("forhandsfiltre: alt sendt herfra gir fortsatt et filter, så de sendte radene skjules", () => {
+  const f = forhandsfiltre({ tripletexKey: "tripletex", rows: [{ tripletex: "Ordre 1" }] });
+  assert.deepEqual([...f.tripletex], ["Ikke sendt"]);
 });
 
 test("behold: valg for kolonner som finnes fortsatt, nye kolonner som ved ny henting", () => {
