@@ -220,19 +220,25 @@ const harTimer = (celle: string | undefined) => {
  * Kolonner som hører til ordrelinjer, men er skjult i PDF-en: da står det på
  * fakturaen «iht. vedlegg» om timer vedlegget ikke viser. Maskintimer telles bare
  * der maskinen faktureres (ikke «Faktureres ikke»); maskinnavnet telles når timene
- * ved siden av faktureres.
+ * ved siden av faktureres. Timer-kolonnen telles når noe går som Grunnarbeider.
  */
 export function skjulteFaktureringskolonner(
   rows: Row[],
   columns: ColMeta[],
   synlige: Set<string>,
   koblinger: Kobling[] = [],
+  /** Noen timer i Timer-kolonnen legges på som Grunnarbeider (advarsler.somGrunnarbeider > 0). */
+  timerFaktureres = false,
 ): string[] {
   const faktureresIkke = new Set(koblinger.filter((k) => !k.faktureres).map((k) => k.maskinId));
   const nokkel = (label: string) => columns.find((c) => c.label === label)?.key;
   const ut: string[] = [];
   for (const c of columns) {
     if (synlige.has(c.key)) continue;
+    if (c.label === "Timer") {
+      if (timerFaktureres) ut.push(c.label);
+      continue;
+    }
     if (OVERTID_SOM_FAKTURERES.includes(c.label)) {
       if (rows.some((r) => harTimer(r[c.key]))) ut.push(c.label);
       continue;
@@ -271,30 +277,25 @@ export function alleredeSendte(rows: Row[], tripletexKey: string | undefined, ti
 
 const timer = (n: number) => `${fmtAntall(n)} ${n === 1 ? "time" : "timer"}`;
 
+/** Overskriften på boksen med det som må sjekkes på ordren før den faktureres. */
+export const SJEKK_I_TRIPLETEX = "Sjekk i Tripletex før fakturering";
+
 /**
- * Sperrer stopper «Legg på ordre». Advarsler vises, men stopper ikke.
- * Rekkefølgen er den brukeren bør ta tak i dem.
+ * Sperrer stopper «Legg på ordre»: bare rader som alt er sendt herfra, og en
+ * sending uten linjer (beregningsfeil, uavklart sending og for stor PDF sperres
+ * i dialogen). Ordren i Tripletex er godkjenningen, så tekstlinjer, 0 kr-linjer
+ * og timer alt fakturert i SmartDok går på ordren og står i `sjekk`.
+ * Advarsler er annen informasjon. Ingenting i sjekk eller advarsler stopper.
  */
 export function vurderForhandsvisning(
   b: Ordreberegning,
   ekstra: { alleredeSendt: string[]; skjulteKolonner: string[] },
-): { sperrer: Melding[]; advarsler: Melding[] } {
+): { sperrer: Melding[]; sjekk: Melding[]; advarsler: Melding[] } {
   const sperrer: Melding[] = [];
+  const sjekk: Melding[] = [];
   const advarsler: Melding[] = [];
   const a = b.advarsler;
 
-  if (a.utenKobling.length) {
-    sperrer.push({
-      id: "utenKobling",
-      tekst: `Maskiner uten kobling til et Tripletex-produkt: ${liste(a.utenKobling)}. Koble dem i koblingslisten før du sender.`,
-    });
-  }
-  if (a.utenPris.length) {
-    sperrer.push({
-      id: "utenPris",
-      tekst: `Produkter uten pris i Tripletex: ${liste(a.utenPris)}. Legg inn pris på produktet i Tripletex før du sender.`,
-    });
-  }
   if (ekstra.alleredeSendt.length) {
     sperrer.push({
       id: "alleredeSendt",
@@ -303,31 +304,48 @@ export function vurderForhandsvisning(
         "Ta dem bort med filteret på Tripletex-kolonnen (fjern «Ordre …»-verdiene) før du sender.",
     });
   }
-  if (b.linjer.length === 0 && sperrer.length === 0) {
+  if (b.linjer.length === 0) {
     sperrer.push({
       id: "ingenLinjer",
-      tekst: "Ingen linjer å legge inn: ingen av radene har maskintimer eller overtid som faktureres.",
+      tekst: "Ingen linjer å legge inn: ingen av timene fra SmartDok i tabellen har timer som kan legges på ordren.",
     });
   }
 
-  if (a.alleredeFakturert > 0) {
-    advarsler.push({
-      id: "alleredeFakturert",
-      tekst: `${timer(a.alleredeFakturert)} (maskin eller overtid) er alt fakturert i SmartDok og blir ikke lagt på ordren igjen. De står i PDF-en.`,
-    });
-  }
-  if (a.utenMaskin > 0) {
-    advarsler.push({
-      id: "utenMaskin",
-      tekst: `${timer(a.utenMaskin)} uten fakturerbar maskin blir ikke lagt på ordren og merkes ikke som sendt. De står i PDF-en.`,
-    });
-  }
-  if (a.overtidUtenMaskin > 0) {
-    advarsler.push({
-      id: "overtidUtenMaskin",
+  if (a.utenKobling.length) {
+    sjekk.push({
+      id: "utenKobling",
       tekst:
-        `${timer(a.overtidUtenMaskin)} overtid står på rader uten fakturerbar maskin. Overtid faktureres bare som tillegg ` +
-        "til maskintimer, så den blir ikke lagt på ordren og merkes ikke som sendt. Legg den inn for hånd i Tripletex om den skal faktureres.",
+        `Maskiner uten kobling legges på som tekstlinje uten produkt, med 0 kr: ${liste(a.utenKobling)}. ` +
+        "Sett produkt eller pris på linjene i Tripletex. Koble maskinene i koblingslisten, så blir de produktlinjer neste gang.",
+    });
+  }
+  if (a.manglerProdukt.length) {
+    sjekk.push({
+      id: "manglerProdukt",
+      tekst:
+        `Finnes ikke som produkt i Tripletex og legges på som tekstlinje med 0 kr: ${liste(a.manglerProdukt)}. ` +
+        "Sett pris på linjene i Tripletex.",
+    });
+  }
+  if (a.utenPris.length) {
+    sjekk.push({
+      id: "utenPris",
+      tekst: `Produkter uten pris i Tripletex legges på med 0 kr: ${liste(a.utenPris)}. Sett pris på linjene i Tripletex.`,
+    });
+  }
+  if (a.alleredeFakturert > 0) {
+    sjekk.push({
+      id: "alleredeFakturert",
+      tekst:
+        `${timer(a.alleredeFakturert)} (maskin eller overtid) er alt merket fakturert i SmartDok, men legges på ordren likevel. ` +
+        "Ta dem bort fra ordren i Tripletex om kunden alt har fått dem fakturert.",
+    });
+  }
+
+  if (a.somGrunnarbeider > 0) {
+    advarsler.push({
+      id: "somGrunnarbeider",
+      tekst: `${timer(a.somGrunnarbeider)} uten fakturerbar maskin legges på som «Grunnarbeider».`,
     });
   }
   if (a.haandlagde > 0) {
@@ -351,7 +369,7 @@ export function vurderForhandsvisning(
       tekst: `${liste(ekstra.skjulteKolonner)} er skjult i PDF-en, men hører til timer som faktureres. Vis ${ekstra.skjulteKolonner.length === 1 ? "kolonnen" : "kolonnene"} så vedlegget viser det som faktureres.`,
     });
   }
-  return { sperrer, advarsler };
+  return { sperrer, sjekk, advarsler };
 }
 
 /* ── Kroppen til «Legg på ordre» ──────────────────────────── */
@@ -375,6 +393,24 @@ export function byggLeggPaaOrdre(a: {
     filnavn: sendbartFilnavn(a.filnavn),
     periode: { fra: a.periode.fra, til: a.periode.til },
   };
+}
+
+/**
+ * Navn på linjene i svaret fra adminbordet. Tekstlinjer (produktId null) har ikke
+ * navn i svaret: de får navnet fra linjene som ble sendt, i samme rekkefølge, men
+ * bare når antallet stemmer. Ellers gjettes det ikke.
+ */
+export function resultatnavn(
+  svar: { produktId: number | null }[],
+  sendte: { produktId: number | null; produktnavn: string }[],
+  produktnavn: (id: number) => string,
+): string[] {
+  const tekst = sendte.filter((l) => l.produktId === null).map((l) => l.produktnavn);
+  const stemmer = svar.filter((l) => l.produktId === null).length === tekst.length;
+  let k = 0;
+  return svar.map((l) =>
+    l.produktId !== null ? produktnavn(l.produktId) : stemmer ? tekst[k++] : "Linje uten produkt",
+  );
 }
 
 /** Zod-feil på kroppen, på norsk: egne meldinger (refine) brukes som de er. */

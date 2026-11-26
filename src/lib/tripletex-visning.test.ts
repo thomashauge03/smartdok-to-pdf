@@ -19,6 +19,7 @@ import {
   koblingsrader,
   lagreInn,
   linjesum,
+  resultatnavn,
   sendbartFilnavn,
   skjulteFaktureringskolonner,
   statusTekst,
@@ -32,9 +33,10 @@ import {
 const tomBeregning = (o: Partial<Ordreberegning> = {}): Ordreberegning => ({
   linjer: [{ produktId: 1, produktnavn: "Grunnarbeider", antall: 7.5, tekst: "Grunnarbeider – arbeid utført iht. vedlegg", listepris: 800 }],
   timerIder: [10, 11],
-  advarsler: { utenMaskin: 0, haandlagde: 0, utenKobling: [], utenPris: [], ukjentOvertid: [], overtidUtenMaskin: 0, alleredeFakturert: 0 },
+  advarsler: { somGrunnarbeider: 0, haandlagde: 0, utenKobling: [], utenPris: [], manglerProdukt: [], ukjentOvertid: [], alleredeFakturert: 0 },
   ...o,
 });
+const tekstlinje = { produktId: null, produktnavn: "Volvo L180G", antall: 5, tekst: "Volvo L180G – arbeid utført iht. vedlegg", listepris: null };
 
 /* ── base64 ── */
 
@@ -165,39 +167,55 @@ test("anbefaltAvklaring fremhever bare det adminbordet godtar", () => {
 
 /* ── forhåndsvisningen ── */
 
-test("vurderForhandsvisning: uten kobling og uten pris sperrer, resten er advarsler", () => {
+test("vurderForhandsvisning: uten kobling, uten pris og allerede fakturert er «sjekk i Tripletex», ikke sperrer", () => {
   const v = vurderForhandsvisning(
     tomBeregning({
+      linjer: [...tomBeregning().linjer, tekstlinje],
       advarsler: {
-        utenMaskin: 3.5, haandlagde: 2, utenKobling: ["Cat 324"], utenPris: ["Grunnarbeider"], ukjentOvertid: ["Overtid 70%"],
-        overtidUtenMaskin: 2, alleredeFakturert: 1.5,
+        somGrunnarbeider: 3.5, haandlagde: 2, utenKobling: ["Volvo L180G"], utenPris: ["Grunnarbeider"],
+        manglerProdukt: ["609 100 % overtidsarbeid"], ukjentOvertid: ["Overtid 70%"], alleredeFakturert: 1.5,
       },
     }),
     { alleredeSendt: [], skjulteKolonner: ["Maskintimer2"] },
   );
-  assert.deepEqual(v.sperrer.map((m) => m.id), ["utenKobling", "utenPris"]);
-  assert.deepEqual(v.advarsler.map((m) => m.id), [
-    "alleredeFakturert", "utenMaskin", "overtidUtenMaskin", "haandlagde", "ukjentOvertid", "skjulteKolonner",
-  ]);
-  assert.match(v.sperrer[0].tekst, /«Cat 324»/);
-  const tekst = (id: string) => v.advarsler.find((m) => m.id === id)!.tekst;
-  assert.match(tekst("alleredeFakturert"), /1,5 timer/);
-  assert.match(tekst("alleredeFakturert"), /fakturert i SmartDok/);
-  assert.match(tekst("utenMaskin"), /3,5 timer/);
-  assert.match(tekst("utenMaskin"), /blir ikke lagt på ordren og merkes ikke som sendt/);
-  assert.match(tekst("overtidUtenMaskin"), /2 timer overtid/);
-  assert.match(tekst("overtidUtenMaskin"), /blir ikke lagt på ordren og merkes ikke som sendt/);
+  assert.deepEqual(v.sperrer, []);
+  assert.deepEqual(v.sjekk.map((m) => m.id), ["utenKobling", "manglerProdukt", "utenPris", "alleredeFakturert"]);
+  assert.deepEqual(v.advarsler.map((m) => m.id), ["somGrunnarbeider", "haandlagde", "ukjentOvertid", "skjulteKolonner"]);
+  const sjekk = (id: string) => v.sjekk.find((m) => m.id === id)!.tekst;
+  const info = (id: string) => v.advarsler.find((m) => m.id === id)!.tekst;
+  assert.match(sjekk("utenKobling"), /«Volvo L180G»/);
+  assert.match(sjekk("utenKobling"), /tekstlinje/);
+  assert.match(sjekk("manglerProdukt"), /«609 100 % overtidsarbeid»/);
+  assert.match(sjekk("utenPris"), /«Grunnarbeider»/);
+  assert.match(sjekk("utenPris"), /0 kr/);
+  assert.match(sjekk("alleredeFakturert"), /1,5 timer/);
+  assert.match(sjekk("alleredeFakturert"), /fakturert i SmartDok/);
+  assert.match(sjekk("alleredeFakturert"), /legges på ordren/);
+  assert.match(info("somGrunnarbeider"), /3,5 timer/);
+  assert.match(info("somGrunnarbeider"), /Grunnarbeider/);
+  for (const m of [...v.sjekk, ...v.advarsler]) assert.doesNotMatch(m.tekst, /før du sender/, m.id);
 });
 
 test("vurderForhandsvisning: ingen linjer sperrer, og allerede sendte rader sperrer", () => {
-  assert.deepEqual(
-    vurderForhandsvisning(tomBeregning({ linjer: [], timerIder: [] }), { alleredeSendt: [], skjulteKolonner: [] }).sperrer.map((m) => m.id),
-    ["ingenLinjer"],
-  );
+  const tom = vurderForhandsvisning(tomBeregning({ linjer: [], timerIder: [] }), { alleredeSendt: [], skjulteKolonner: [] });
+  assert.deepEqual(tom.sperrer.map((m) => m.id), ["ingenLinjer"]);
   const v = vurderForhandsvisning(tomBeregning(), { alleredeSendt: ["Ordre 1234"], skjulteKolonner: [] });
   assert.deepEqual(v.sperrer.map((m) => m.id), ["alleredeSendt"]);
   assert.match(v.sperrer[0].tekst, /Ordre 1234/);
-  assert.deepEqual(vurderForhandsvisning(tomBeregning(), { alleredeSendt: [], skjulteKolonner: [] }), { sperrer: [], advarsler: [] });
+  assert.deepEqual(vurderForhandsvisning(tomBeregning(), { alleredeSendt: [], skjulteKolonner: [] }), {
+    sperrer: [], sjekk: [], advarsler: [],
+  });
+});
+
+test("vurderForhandsvisning: bare tekstlinjer og 0 kr-linjer kan sendes", () => {
+  const v = vurderForhandsvisning(
+    tomBeregning({
+      linjer: [tekstlinje, { ...tekstlinje, produktId: 5, produktnavn: "Grunnarbeider", listepris: 0 }],
+      advarsler: { ...tomBeregning().advarsler, utenKobling: ["Volvo L180G"], utenPris: ["Grunnarbeider"] },
+    }),
+    { alleredeSendt: [], skjulteKolonner: [] },
+  );
+  assert.deepEqual(v.sperrer, []);
 });
 
 test("alleredeSendte ser bare på rader som skal merkes", () => {
@@ -257,6 +275,17 @@ test("skjulteFaktureringskolonner: bare skjulte maskin- og overtidskolonner med 
   assert.deepEqual(skjulteFaktureringskolonner(rows, columns, new Set(["m1", "o50"])), []);
 });
 
+test("skjulteFaktureringskolonner: skjult Timer varsles bare når timer går som Grunnarbeider", () => {
+  const columns: ColMeta[] = [
+    { key: "timer", label: "Timer", defaultWidth: 1 },
+    { key: "m1", label: "Maskintimer1", defaultWidth: 1 },
+  ];
+  const rows = [{ timer: "8", m1: "" }];
+  assert.deepEqual(skjulteFaktureringskolonner(rows, columns, new Set(["m1"]), [], true), ["Timer"]);
+  assert.deepEqual(skjulteFaktureringskolonner(rows, columns, new Set(["m1"]), [], false), []);
+  assert.deepEqual(skjulteFaktureringskolonner(rows, columns, new Set(["m1", "timer"]), [], true), []);
+});
+
 test("byggLeggPaaOrdre lager en kropp som består skjemaet", () => {
   const pdf = Buffer.from("%PDF-1.3 test").toString("base64");
   const inn = byggLeggPaaOrdre({
@@ -278,6 +307,39 @@ test("byggLeggPaaOrdre lager en kropp som består skjemaet", () => {
   assert.deepEqual(eks.ordre, { id: 77 });
   assert.equal(eks.filnavn, "x.pdf");
   assert.ok(leggPaaOrdreInn.safeParse(eks).success);
+});
+
+test("byggLeggPaaOrdre sender tekstlinjer med produktId null, og kroppen består skjemaet", () => {
+  const inn = byggLeggPaaOrdre({
+    prosjekt: "1234",
+    ordre: { ny: true },
+    beregning: tomBeregning({ linjer: [...tomBeregning().linjer, tekstlinje] }),
+    pdf: "AAAA",
+    filnavn: "a.pdf",
+    periode: { fra: "2026-11-01", til: "2026-11-30" },
+  });
+  assert.deepEqual(inn.linjer, [
+    { produktId: 1, antall: 7.5, tekst: "Grunnarbeider – arbeid utført iht. vedlegg" },
+    { produktId: null, antall: 5, tekst: "Volvo L180G – arbeid utført iht. vedlegg" },
+  ]);
+  const p = leggPaaOrdreInn.safeParse(inn);
+  assert.ok(p.success);
+  assert.equal(p.data.linjer[1].produktId, null);
+});
+
+test("resultatnavn: produktlinjer får produktnavnet, tekstlinjer navnet fra det som ble sendt", () => {
+  const sendte = [
+    { produktId: 5, produktnavn: "25 t gravemaskin" },
+    { produktId: null, produktnavn: "Atlas" },
+    { produktId: null, produktnavn: "Volvo L180G" },
+  ];
+  const navn = (id: number) => `Produkt ${id}`;
+  assert.deepEqual(
+    resultatnavn([{ produktId: 5 }, { produktId: null }, { produktId: null }], sendte, navn),
+    ["Produkt 5", "Atlas", "Volvo L180G"],
+  );
+  // Ulikt antall tekstlinjer: gjetter ikke på navn.
+  assert.deepEqual(resultatnavn([{ produktId: null }], sendte, navn), ["Linje uten produkt"]);
 });
 
 test("forklarInndatafeil gir norske meldinger", () => {

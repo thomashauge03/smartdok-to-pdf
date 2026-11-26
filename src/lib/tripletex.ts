@@ -36,7 +36,8 @@ export const leggPaaOrdreInn = z.object({
   linjer: z
     .array(
       z.object({
-        produktId: z.number().int().positive(),
+        // null = tekstlinje uten produkt (0 kr), fylles ut i Tripletex.
+        produktId: z.number().int().positive().nullable(),
         antall: z
           .number()
           .positive()
@@ -113,7 +114,7 @@ export const leggPaaOrdreSvar = z.object({
   kode: z.string(),
   ordrenummer: z.string().nullable(),
   ordreId: z.number().nullable(),
-  linjer: z.array(z.object({ produktId: z.number(), antall: z.number(), pris: z.number(), rabatt: z.number() })),
+  linjer: z.array(z.object({ produktId: z.number().nullable(), antall: z.number(), pris: z.number(), rabatt: z.number() })),
   melding: z.string().optional(),
 });
 

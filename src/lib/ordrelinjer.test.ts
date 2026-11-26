@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { byggTabell, type SmartdokTime } from "./smartdok-timer.ts";
-import { beregnOrdrelinjer, foreslåProdukt, type Kobling, type Produkt } from "./ordrelinjer.ts";
+import { beregnOrdrelinjer, foreslåProdukt, type Kobling, type Ordrelinje, type Produkt } from "./ordrelinjer.ts";
 
 const prosjekt = { nummer: "1234", navn: "Testveien" };
 const periode = { fra: "2026-11-01", til: "2026-11-30" };
@@ -39,6 +39,9 @@ function kjør(timer: SmartdokTime[], koblinger: Kobling[], prod = produkter) {
   return beregnOrdrelinjer(t.rows, t.columns, koblinger, prod);
 }
 
+// [produktId, antall] for produktlinjer, [navn, antall] for tekstlinjer: kort å sammenligne.
+const kort = (linjer: Ordrelinje[]) => linjer.map((l) => [l.produktId ?? l.produktnavn, l.antall]);
+
 test("8 t + 7 t på samme maskin gir én linje med 15 og riktig tekst", () => {
   const r = kjør(
     [arbeid({ id: 1 }), maskin({ id: 1, mengde: 8 }), arbeid({ id: 2 }), maskin({ id: 2, mengde: 7 })],
@@ -58,10 +61,10 @@ test("to maskiner på én rad, én uten fakturering: én linje, raden er med i t
       maskin({ id: 1, mengde: 3, maskin: "Opel Combo", maskinId: 12 })],
     [kob(11, "5"), kob(12, null, false)],
   );
-  assert.equal(r.linjer.length, 1);
-  assert.equal(r.linjer[0].antall, 6);
+  assert.deepEqual(kort(r.linjer), [[pid("5"), 6]]);
   assert.deepEqual(r.timerIder, [1]);
   assert.deepEqual(r.advarsler.utenKobling, []);
+  assert.equal(r.advarsler.somGrunnarbeider, 0); // raden har fakturert maskin: personens timer legges ikke i tillegg
 });
 
 test("overtid 2 t gir linje på 608 og maskintimene er uendret", () => {
@@ -83,12 +86,37 @@ test("overtid 100 % går til 609, og sorteringen er etter produktnummer (tallmes
   assert.equal(r.linjer[1].antall, 1.5);
 });
 
-test("overtid uten produkt 608 gir advarsel i utenPris, ikke krasj", () => {
+test("overtid uten produkt 608 blir tekstlinje «50 % overtidsarbeid» og står i manglerProdukt", () => {
   const uten608 = produkter.filter((p) => p.nummer !== "608");
   const r = kjør([arbeid({ id: 1 }), maskin({ id: 1, mengde: 8 }), tillegg({ id: 1, mengde: 2 })], [kob(11, "5")], uten608);
-  assert.deepEqual(r.linjer.map((l) => l.produktId), [pid("5")]);
-  assert.equal(r.advarsler.utenPris.length, 1);
-  assert.match(r.advarsler.utenPris[0], /608/);
+  assert.deepEqual(r.linjer, [
+    { produktId: pid("5"), produktnavn: "25 t gravemaskin m/ GPS", antall: 8, tekst: "25 t gravemaskin m/ GPS – arbeid utført iht. vedlegg", listepris: 1000 },
+    { produktId: null, produktnavn: "50 % overtidsarbeid", antall: 2, tekst: "50 % overtidsarbeid – arbeid utført iht. vedlegg", listepris: null },
+  ]);
+  assert.deepEqual(r.advarsler.utenPris, []);
+  assert.equal(r.advarsler.manglerProdukt.length, 1);
+  assert.match(r.advarsler.manglerProdukt[0], /608/);
+  assert.deepEqual(r.timerIder, [1]);
+});
+
+test("mangler 602, 608 og 609 i Tripletex: tekstlinjer med samme navn, etter produktlinjene", () => {
+  const uten = produkter.filter((p) => !["602", "608", "609"].includes(p.nummer));
+  const r = kjør(
+    [arbeid({ id: 1 }), maskin({ id: 1, mengde: 8 }), tillegg({ id: 1, lonnsart: "Overtid 100%", mengde: 1 }),
+      arbeid({ id: 2, mengde: 6 }), tillegg({ id: 2, mengde: 2 })],
+    [kob(11, "5")],
+    uten,
+  );
+  assert.deepEqual(kort(r.linjer), [
+    [pid("5"), 8], ["50 % overtidsarbeid", 2], ["100 % overtidsarbeid", 1], ["Grunnarbeider", 6],
+  ]);
+  for (const l of r.linjer.slice(1)) {
+    assert.equal(l.produktId, null);
+    assert.equal(l.listepris, null);
+    assert.equal(l.tekst, `${l.produktnavn} – arbeid utført iht. vedlegg`);
+  }
+  assert.equal(r.advarsler.manglerProdukt.length, 3);
+  assert.deepEqual(r.timerIder, [1, 2]);
 });
 
 test("redigert celle «Maskintimer1» = 6 brukes", () => {
@@ -123,61 +151,202 @@ test("håndlagd rad med bare overtid gir ingen linje, bare haandlagde", () => {
   const r = beregnOrdrelinjer(t.rows, t.columns, [], produkter);
   assert.equal(r.linjer.length, 0);
   assert.equal(r.advarsler.haandlagde, 1);
+  assert.equal(r.advarsler.somGrunnarbeider, 0);
   assert.deepEqual(r.timerIder, []);
 });
 
-test("håndlagd rad med ukoblet maskin gir ikke utenKobling", () => {
+test("håndlagd rad med ukoblet maskin gir ikke utenKobling og ingen linje", () => {
   const t = byggTabell([arbeid({ id: 1 }), maskin({ id: 1 })], prosjekt, periode);
   delete t.rows[0]["__id"];
   const r = beregnOrdrelinjer(t.rows, t.columns, [], produkter);
   assert.deepEqual(r.advarsler.utenKobling, []);
+  assert.deepEqual(r.linjer, []);
   assert.equal(r.advarsler.haandlagde, 1);
 });
 
-test("overtid uten maskin blir ingen linje, raden merkes ikke, og timene havner i overtidUtenMaskin", () => {
-  const r = kjør([arbeid({ id: 1, mengde: 8 }), tillegg({ id: 1, mengde: 2 })], []);
-  assert.equal(r.advarsler.utenMaskin, 8);
-  assert.equal(r.advarsler.overtidUtenMaskin, 2);
-  assert.equal(r.linjer.length, 0); // overtid er tillegg oppå maskintimer, ikke en egen linje
-  assert.deepEqual(r.timerIder, []);
+/* ── Tilfelle 1: maskin uten kobling blir tekstlinje ─────── */
+
+test("maskin uten kobling blir tekstlinje uten produkt med maskinnavnet, og raden merkes", () => {
+  const r = kjør([arbeid({ id: 1 }), maskin({ id: 1, maskin: "Volvo L180G", maskinId: 99, mengde: 6 })], [kob(11, "5")]);
+  assert.deepEqual(r.linjer, [
+    { produktId: null, produktnavn: "Volvo L180G", antall: 6, tekst: "Volvo L180G – arbeid utført iht. vedlegg", listepris: null },
+  ]);
+  assert.deepEqual(r.advarsler.utenKobling, ["Volvo L180G"]);
+  assert.deepEqual(r.timerIder, [1]);
 });
 
-test("overtid på rad med ukoblet maskin blir ingen linje og teller i overtidUtenMaskin", () => {
+test("ukoblet maskin: timene summeres per maskinnavn over flere rader", () => {
+  const r = kjør(
+    [arbeid({ id: 1 }), maskin({ id: 1, maskin: "Volvo L180G", maskinId: 99, mengde: 6 }),
+      arbeid({ id: 2 }), maskin({ id: 2, maskin: "Volvo L180G", maskinId: 99, mengde: 2.5 }),
+      arbeid({ id: 3 }), maskin({ id: 3, maskin: "Hitachi ZX85", maskinId: 98, mengde: 4 })],
+    [],
+  );
+  assert.deepEqual(kort(r.linjer), [["Hitachi ZX85", 4], ["Volvo L180G", 8.5]]);
+  assert.deepEqual(r.advarsler.utenKobling, ["Volvo L180G", "Hitachi ZX85"]);
+  assert.deepEqual(r.timerIder, [1, 2, 3]);
+});
+
+test("rad med ukoblet maskin får ingen Grunnarbeider-linje for personens timer", () => {
+  const r = kjør([arbeid({ id: 1, mengde: 8 }), maskin({ id: 1, maskin: "Volvo L180G", maskinId: 99, mengde: 5 })], []);
+  assert.deepEqual(kort(r.linjer), [["Volvo L180G", 5]]);
+  assert.equal(r.advarsler.somGrunnarbeider, 0);
+});
+
+test("ukoblet maskin ved siden av en «faktureres ikke»-maskin: ingen Grunnarbeider-linje", () => {
+  const r = kjør(
+    [arbeid({ id: 1, mengde: 8 }), maskin({ id: 1, maskin: "Opel Combo", maskinId: 12, mengde: 2 }),
+      maskin({ id: 1, maskin: "Volvo L180G", maskinId: 99, mengde: 5 })],
+    [kob(12, null, false)],
+  );
+  assert.deepEqual(kort(r.linjer), [["Volvo L180G", 5]]);
+  assert.equal(r.advarsler.somGrunnarbeider, 0);
+});
+
+test("__maskin<i> tom gir tekstlinje og utenKobling", () => {
+  const r = kjør([arbeid({ id: 1 }), maskin({ id: 1, maskin: "Ukjent", maskinId: null })], [kob(11, "5")]);
+  assert.deepEqual(r.advarsler.utenKobling, ["Ukjent"]);
+  assert.deepEqual(kort(r.linjer), [["Ukjent", 5]]);
+});
+
+test("kobling til produkt som ikke finnes lenger blir tekstlinje, med forklaring i utenKobling", () => {
+  const r = kjør([arbeid({ id: 1 }), maskin({ id: 1, maskin: "Cat 324 E" })], [{ maskinId: 11, faktureres: true, produktId: 99999 }]);
+  assert.deepEqual(r.advarsler.utenKobling, ["Cat 324 E (produktet finnes ikke lenger i Tripletex)"]);
+  assert.deepEqual(r.linjer, [
+    { produktId: null, produktnavn: "Cat 324 E", antall: 5, tekst: "Cat 324 E – arbeid utført iht. vedlegg", listepris: null },
+  ]);
+  assert.deepEqual(r.timerIder, [1]);
+});
+
+test("kobling uten produkt regnes som ukoblet; maskin med 0 timer ignoreres", () => {
+  const r = kjør(
+    [arbeid({ id: 1 }), maskin({ id: 1, maskin: "A", maskinId: 11 }), maskin({ id: 1, maskin: "B", maskinId: 12, mengde: 0 })],
+    [kob(11, null)],
+  );
+  assert.deepEqual(r.advarsler.utenKobling, ["A"]);
+  assert.deepEqual(kort(r.linjer), [["A", 5]]);
+});
+
+/* ── Tilfelle 2: produkt uten pris blir 0 kr-linje ───────── */
+
+test("produkt med pris null gir vanlig produktlinje og står i utenPris", () => {
+  const medNullpris = produkter.map((p) => (p.nummer === "5" ? { ...p, pris: null } : p));
+  const r = kjør([arbeid({ id: 1 }), maskin({ id: 1 })], [kob(11, "5")], medNullpris);
+  assert.deepEqual(kort(r.linjer), [[pid("5"), 5]]);
+  assert.equal(r.linjer[0].listepris, null);
+  assert.deepEqual(r.advarsler.utenPris, ["25 t gravemaskin m/ GPS"]);
+  assert.deepEqual(r.timerIder, [1]);
+});
+
+test("produkt med pris 0 gir vanlig produktlinje og står i utenPris", () => {
+  const medNullpris = produkter.map((p) => (p.nummer === "602" ? { ...p, pris: 0 } : p));
+  const r = kjør([arbeid({ id: 1, mengde: 7 })], [], medNullpris);
+  assert.deepEqual(kort(r.linjer), [[pid("602"), 7]]);
+  assert.equal(r.linjer[0].listepris, 0);
+  assert.deepEqual(r.advarsler.utenPris, ["Grunnarbeider"]);
+});
+
+/* ── Tilfelle 3: allerede fakturert i SmartDok tas med ───── */
+
+test("fakturert maskin tas med som vanlig linje og teller i alleredeFakturert", () => {
+  const r = kjør([arbeid({ id: 1, mengde: 8 }), maskin({ id: 1, mengde: 8, fakturert: true })], [kob(11, "5")]);
+  assert.deepEqual(kort(r.linjer), [[pid("5"), 8]]);
+  assert.deepEqual(r.timerIder, [1]);
+  assert.equal(r.advarsler.alleredeFakturert, 8);
+  assert.equal(r.advarsler.somGrunnarbeider, 0);
+});
+
+test("fakturert og ukoblet maskin blir tekstlinje og teller i alleredeFakturert", () => {
+  const r = kjør([arbeid({ id: 1, mengde: 8 }), maskin({ id: 1, mengde: 8, maskinId: 99, fakturert: true })], []);
+  assert.deepEqual(kort(r.linjer), [["Cat 324 E", 8]]);
+  assert.deepEqual(r.timerIder, [1]);
+  assert.equal(r.advarsler.alleredeFakturert, 8);
+  assert.equal(r.advarsler.somGrunnarbeider, 0);
+  assert.deepEqual(r.advarsler.utenKobling, ["Cat 324 E"]);
+});
+
+test("to maskiner der én er fakturert: begge blir linjer, raden merkes", () => {
+  const r = kjør(
+    [arbeid({ id: 1 }), maskin({ id: 1, mengde: 5, fakturert: true }), maskin({ id: 1, mengde: 3, maskinId: 13, maskin: "Volvo A30G" })],
+    [kob(11, "5"), kob(13, "201")],
+  );
+  assert.deepEqual(kort(r.linjer), [[pid("5"), 5], [pid("201"), 3]]);
+  assert.deepEqual(r.timerIder, [1]);
+  assert.equal(r.advarsler.alleredeFakturert, 5);
+});
+
+test("fakturert overtid tas med som linje og teller i alleredeFakturert", () => {
+  const r = kjør(
+    [arbeid({ id: 1 }), maskin({ id: 1, mengde: 8 }), tillegg({ id: 1, mengde: 2, fakturert: true })],
+    [kob(11, "5")],
+  );
+  assert.deepEqual(kort(r.linjer), [[pid("5"), 8], [pid("608"), 2]]);
+  assert.deepEqual(r.timerIder, [1]);
+  assert.equal(r.advarsler.alleredeFakturert, 2);
+});
+
+test("alt fakturert på raden: alt blir linjer og raden merkes", () => {
+  const r = kjør(
+    [arbeid({ id: 1 }), maskin({ id: 1, mengde: 8, fakturert: true }), tillegg({ id: 1, mengde: 2, fakturert: true })],
+    [kob(11, "5")],
+  );
+  assert.deepEqual(kort(r.linjer), [[pid("5"), 8], [pid("608"), 2]]);
+  assert.deepEqual(r.timerIder, [1]);
+  assert.equal(r.advarsler.alleredeFakturert, 10);
+});
+
+test("ett av to overtidstillegg fakturert: hele cellen tas med og regnes som fakturert", () => {
+  const r = kjør(
+    [arbeid({ id: 1 }), maskin({ id: 1, mengde: 8 }), tillegg({ id: 1, mengde: 1, fakturert: true }), tillegg({ id: 1, mengde: 1 })],
+    [kob(11, "5")],
+  );
+  assert.deepEqual(kort(r.linjer), [[pid("5"), 8], [pid("608"), 2]]);
+  assert.equal(r.advarsler.alleredeFakturert, 2);
+});
+
+test("fakturert maskin som er «faktureres ikke» gir ingen linje og teller ikke i alleredeFakturert", () => {
+  const r = kjør([arbeid({ id: 1, mengde: 6 }), maskin({ id: 1, maskinId: 12, fakturert: true })], [kob(12, null, false)]);
+  assert.deepEqual(kort(r.linjer), [[pid("602"), 6]]);
+  assert.equal(r.advarsler.alleredeFakturert, 0);
+});
+
+/* ── Tilfelle 4: overtid blir alltid linje ───────────────── */
+
+test("overtid uten maskin blir 608-linje, og personens timer blir Grunnarbeider", () => {
+  const r = kjør([arbeid({ id: 1, mengde: 8 }), tillegg({ id: 1, mengde: 2 })], []);
+  assert.deepEqual(kort(r.linjer), [[pid("602"), 8], [pid("608"), 2]]);
+  assert.equal(r.advarsler.somGrunnarbeider, 8);
+  assert.deepEqual(r.timerIder, [1]);
+  assert.equal("overtidUtenMaskin" in r.advarsler, false);
+});
+
+test("overtid på rad med ukoblet maskin blir 609-linje ved siden av tekstlinjen", () => {
   const r = kjør(
     [arbeid({ id: 1 }), maskin({ id: 1, maskin: "Volvo L180G", maskinId: 99 }), tillegg({ id: 1, lonnsart: "Overtid 100%", mengde: 1.5 })],
     [],
   );
-  assert.equal(r.linjer.length, 0);
-  assert.equal(r.advarsler.overtidUtenMaskin, 1.5);
+  assert.deepEqual(kort(r.linjer), [[pid("609"), 1.5], ["Volvo L180G", 5]]);
   assert.deepEqual(r.advarsler.utenKobling, ["Volvo L180G"]);
-  assert.deepEqual(r.timerIder, []);
+  assert.deepEqual(r.timerIder, [1]);
 });
 
-test("overtid teller bare på rader med fakturert maskin: summen over flere rader", () => {
+test("overtid summeres over rader med og uten maskin", () => {
   const r = kjør(
     [arbeid({ id: 1 }), maskin({ id: 1, mengde: 8 }), tillegg({ id: 1, mengde: 2 }),
       arbeid({ id: 2 }), tillegg({ id: 2, mengde: 3 })],
     [kob(11, "5")],
   );
-  assert.equal(r.linjer.find((l) => l.produktId === pid("608"))!.antall, 2);
-  assert.equal(r.advarsler.overtidUtenMaskin, 3);
-  assert.deepEqual(r.timerIder, [1]);
+  assert.deepEqual(kort(r.linjer), [[pid("5"), 8], [pid("602"), 7.5], [pid("608"), 5]]);
+  assert.deepEqual(r.timerIder, [1, 2]);
 });
 
-test("rad der alle maskiner er faktureres:false teller i utenMaskin", () => {
-  const r = kjør([arbeid({ id: 1, mengde: 6 }), maskin({ id: 1, maskinId: 12 })], [kob(12, null, false)]);
-  assert.equal(r.advarsler.utenMaskin, 6);
-  assert.deepEqual(r.timerIder, []);
-});
-
-test("faktureres:false-maskin + overtid gir ingen linje, raden merkes ikke, overtiden varsles", () => {
+test("faktureres:false-maskin + overtid: Grunnarbeider og 608, raden merkes", () => {
   const r = kjør(
     [arbeid({ id: 1 }), maskin({ id: 1, maskinId: 12 }), tillegg({ id: 1, mengde: 2 })],
     [kob(12, null, false)],
   );
-  assert.deepEqual(r.linjer, []);
-  assert.deepEqual(r.timerIder, []);
-  assert.equal(r.advarsler.overtidUtenMaskin, 2);
+  assert.deepEqual(kort(r.linjer), [[pid("602"), 7.5], [pid("608"), 2]]);
+  assert.deepEqual(r.timerIder, [1]);
 });
 
 test("fakturert maskin + overtid gir 608-linje og raden i timerIder", () => {
@@ -186,79 +355,86 @@ test("fakturert maskin + overtid gir 608-linje og raden i timerIder", () => {
       tillegg({ id: 1, mengde: 2 })],
     [kob(11, "5"), kob(12, null, false)],
   );
-  assert.deepEqual(r.linjer.map((l) => l.produktId), [pid("5"), pid("608")]);
+  assert.deepEqual(kort(r.linjer), [[pid("5"), 8], [pid("608"), 2]]);
   assert.deepEqual(r.timerIder, [1]);
-  assert.equal(r.advarsler.overtidUtenMaskin, 0);
 });
 
-/* ── Allerede fakturert i SmartDok ───────────────────────── */
+/* ── Tilfelle 5: timer uten maskin blir Grunnarbeider ────── */
 
-test("fakturert maskinrad hoppes over, teller i alleredeFakturert og ikke i utenMaskin eller utenKobling", () => {
-  const r = kjør([arbeid({ id: 1, mengde: 8 }), maskin({ id: 1, mengde: 8, maskinId: 99, fakturert: true })], []);
-  assert.deepEqual(r.linjer, []);
-  assert.deepEqual(r.timerIder, []);
-  assert.equal(r.advarsler.alleredeFakturert, 8);
-  assert.equal(r.advarsler.utenMaskin, 0);
-  assert.deepEqual(r.advarsler.utenKobling, []);
-});
-
-test("to maskiner der én er fakturert: bare den andre blir linje, raden merkes", () => {
+test("rader uten maskin: Timer-kolonnen summeres på Grunnarbeider (602)", () => {
   const r = kjør(
-    [arbeid({ id: 1 }), maskin({ id: 1, mengde: 5, fakturert: true }), maskin({ id: 1, mengde: 3, maskinId: 13, maskin: "Volvo A30G" })],
+    [arbeid({ id: 1, mengde: 7.5 }), arbeid({ id: 2, mengde: 4 }), maskin({ id: 2, mengde: 4 }),
+      arbeid({ id: 3, mengde: 2 })],
+    [kob(11, "5")],
+  );
+  assert.deepEqual(kort(r.linjer), [[pid("5"), 4], [pid("602"), 9.5]]);
+  assert.equal(r.linjer[1].tekst, "Grunnarbeider – arbeid utført iht. vedlegg");
+  assert.equal(r.advarsler.somGrunnarbeider, 9.5);
+  assert.deepEqual(r.timerIder, [1, 2, 3]);
+});
+
+test("rad der alle maskiner er faktureres:false: personens timer blir Grunnarbeider", () => {
+  const r = kjør([arbeid({ id: 1, mengde: 6 }), maskin({ id: 1, maskinId: 12 })], [kob(12, null, false)]);
+  assert.deepEqual(kort(r.linjer), [[pid("602"), 6]]);
+  assert.equal(r.advarsler.somGrunnarbeider, 6);
+  assert.deepEqual(r.timerIder, [1]);
+});
+
+test("Grunnarbeider fra maskinkobling og fra rader uten maskin legges sammen i én linje", () => {
+  const r = kjør(
+    [arbeid({ id: 1 }), maskin({ id: 1, maskin: "Håndarbeid", maskinId: 30, mengde: 4 }),
+      arbeid({ id: 2, mengde: 3 }),
+      arbeid({ id: 3, mengde: 2.25 })],
+    [kob(30, "602")],
+  );
+  assert.deepEqual(kort(r.linjer), [[pid("602"), 9.25]]);
+  assert.equal(r.advarsler.somGrunnarbeider, 5.25);
+  assert.deepEqual(r.timerIder, [1, 2, 3]);
+});
+
+test("samme produkt fra flere maskiner og rader summeres riktig", () => {
+  const r = kjør(
+    [arbeid({ id: 1 }), maskin({ id: 1, mengde: 3.5 }), maskin({ id: 1, maskinId: 14, maskin: "Cat 325", mengde: 2 }),
+      arbeid({ id: 2 }), maskin({ id: 2, mengde: 1.25 }),
+      arbeid({ id: 3 }), maskin({ id: 3, maskinId: 14, maskin: "Cat 325", mengde: 0.5 }), tillegg({ id: 3, mengde: 1 }),
+      arbeid({ id: 4 }), tillegg({ id: 4, mengde: 0.5 })],
+    [kob(11, "5"), kob(14, "5")],
+  );
+  assert.deepEqual(kort(r.linjer), [[pid("5"), 7.25], [pid("602"), 7.5], [pid("608"), 1.5]]);
+  assert.deepEqual(r.timerIder, [1, 2, 3, 4]);
+});
+
+test("rad med __id uten timer gir ingen linje og merkes ikke", () => {
+  const r = kjør([arbeid({ id: 1, mengde: 0 }), arbeid({ id: 2, mengde: 3 })], []);
+  assert.deepEqual(kort(r.linjer), [[pid("602"), 3]]);
+  assert.deepEqual(r.timerIder, [2]);
+});
+
+test("sortering: produktlinjer etter nummer, så tekstlinjer etter navn", () => {
+  const r = kjør(
+    [arbeid({ id: 1 }), maskin({ id: 1, maskin: "Zeppelin", maskinId: 90, mengde: 1 }),
+      arbeid({ id: 2 }), maskin({ id: 2, maskin: "Atlas", maskinId: 91, mengde: 1 }),
+      arbeid({ id: 3 }), maskin({ id: 3, mengde: 1, maskinId: 13, maskin: "Volvo A30G" }),
+      arbeid({ id: 4 }), maskin({ id: 4, mengde: 1 })],
     [kob(11, "5"), kob(13, "201")],
   );
-  assert.deepEqual(r.linjer.map((l) => [l.produktId, l.antall]), [[pid("201"), 3]]);
-  assert.deepEqual(r.timerIder, [1]);
-  assert.equal(r.advarsler.alleredeFakturert, 5);
+  assert.deepEqual(kort(r.linjer), [[pid("5"), 1], [pid("201"), 1], ["Atlas", 1], ["Zeppelin", 1]]);
 });
 
-test("fakturert overtid hoppes over selv om maskinen faktureres", () => {
-  const r = kjør(
-    [arbeid({ id: 1 }), maskin({ id: 1, mengde: 8 }), tillegg({ id: 1, mengde: 2, fakturert: true })],
-    [kob(11, "5")],
-  );
-  assert.deepEqual(r.linjer.map((l) => l.produktId), [pid("5")]);
-  assert.deepEqual(r.timerIder, [1]);
-  assert.equal(r.advarsler.alleredeFakturert, 2);
-  assert.equal(r.advarsler.overtidUtenMaskin, 0);
-});
-
-test("alt fakturert på raden: ingen linjer og raden merkes ikke", () => {
-  const r = kjør(
-    [arbeid({ id: 1 }), maskin({ id: 1, mengde: 8, fakturert: true }), tillegg({ id: 1, mengde: 2, fakturert: true })],
-    [kob(11, "5")],
-  );
-  assert.deepEqual(r.linjer, []);
-  assert.deepEqual(r.timerIder, []);
-  assert.equal(r.advarsler.alleredeFakturert, 10);
-  assert.equal(r.advarsler.overtidUtenMaskin, 0);
-});
-
-test("ett av to overtidstillegg fakturert: hele cellen regnes som fakturert", () => {
-  const r = kjør(
-    [arbeid({ id: 1 }), maskin({ id: 1, mengde: 8 }), tillegg({ id: 1, mengde: 1, fakturert: true }), tillegg({ id: 1, mengde: 1 })],
-    [kob(11, "5")],
-  );
-  assert.deepEqual(r.linjer.map((l) => l.produktId), [pid("5")]);
-  assert.equal(r.advarsler.alleredeFakturert, 2);
-});
-
-test("__maskin<i> tom gir utenKobling", () => {
-  const r = kjør([arbeid({ id: 1 }), maskin({ id: 1, maskin: "Ukjent", maskinId: null })], [kob(11, "5")]);
-  assert.deepEqual(r.advarsler.utenKobling, ["Ukjent"]);
-});
-
-test("kobling til produkt som ikke finnes lenger gir utenKobling med forklaring", () => {
-  const r = kjør([arbeid({ id: 1 }), maskin({ id: 1, maskin: "Cat 324 E" })], [{ maskinId: 11, faktureres: true, produktId: 99999 }]);
-  assert.deepEqual(r.advarsler.utenKobling, ["Cat 324 E (produktet finnes ikke lenger i Tripletex)"]);
-  assert.equal(r.linjer.length, 0);
-});
+/* ── Feil i tabellen stopper beregningen ─────────────────── */
 
 test("negativt tall i fakturert celle kaster med rad og kolonne", () => {
   const t = byggTabell([arbeid({ id: 1 }), maskin({ id: 1 })], prosjekt, periode);
   const nokkel = t.columns.find((c) => c.label === "Maskintimer1")!.key;
   t.rows[0][nokkel] = "-3";
   assert.throws(() => beregnOrdrelinjer(t.rows, t.columns, [kob(11, "5")], produkter), /rad 1.*Maskintimer1/);
+});
+
+test("ugyldig tall i Timer på rad uten maskin kaster", () => {
+  const t = byggTabell([arbeid({ id: 1 })], prosjekt, periode);
+  const nokkel = t.columns.find((c) => c.label === "Timer")!.key;
+  t.rows[0][nokkel] = "sju";
+  assert.throws(() => beregnOrdrelinjer(t.rows, t.columns, [], produkter), /rad 1.*Timer/);
 });
 
 test("ugyldig __id kaster", () => {
@@ -269,46 +445,13 @@ test("ugyldig __id kaster", () => {
   assert.throws(() => beregnOrdrelinjer(t.rows, t.columns, [kob(11, "5")], produkter), /__id/);
 });
 
-test("ukjent overtidskolonne med timer gir ukjentOvertid", () => {
+test("ukjent overtidskolonne med timer gir ukjentOvertid og ingen linje", () => {
   const r = kjør(
     [arbeid({ id: 1 }), maskin({ id: 1 }), tillegg({ id: 1, lonnsart: "Overtid 70%", mengde: 1 })],
     [kob(11, "5")],
   );
   assert.deepEqual(r.advarsler.ukjentOvertid, ["Overtid 70%"]);
   assert.equal(r.linjer.length, 1);
-});
-
-test("rad med __id uten maskin eller overtid: timene summeres i utenMaskin", () => {
-  const r = kjør(
-    [arbeid({ id: 1, mengde: 7.5 }), arbeid({ id: 2, mengde: 4 }), maskin({ id: 2, mengde: 4 }),
-      arbeid({ id: 3, mengde: 2 })],
-    [kob(11, "5")],
-  );
-  assert.equal(r.advarsler.utenMaskin, 9.5);
-  assert.deepEqual(r.timerIder, [2]);
-});
-
-test("maskin uten kobling havner i utenKobling (navn fra cellen) og ikke i linjene", () => {
-  const r = kjør([arbeid({ id: 1 }), maskin({ id: 1, maskin: "Volvo L180G", maskinId: 99 })], [kob(11, "5")]);
-  assert.deepEqual(r.advarsler.utenKobling, ["Volvo L180G"]);
-  assert.equal(r.linjer.length, 0);
-  assert.deepEqual(r.timerIder, []);
-});
-
-test("kobling uten produkt regnes som utenKobling; maskin med 0 timer ignoreres", () => {
-  const r = kjør(
-    [arbeid({ id: 1 }), maskin({ id: 1, maskin: "A", maskinId: 11 }), maskin({ id: 1, maskin: "B", maskinId: 12, mengde: 0 })],
-    [kob(11, null)],
-  );
-  assert.deepEqual(r.advarsler.utenKobling, ["A"]);
-});
-
-test("produkt uten pris gir linje og advarsel i utenPris", () => {
-  const medNullpris = produkter.map((p) => (p.nummer === "5" ? { ...p, pris: null } : p));
-  const r = kjør([arbeid({ id: 1 }), maskin({ id: 1 })], [kob(11, "5")], medNullpris);
-  assert.equal(r.linjer.length, 1);
-  assert.equal(r.linjer[0].listepris, null);
-  assert.deepEqual(r.advarsler.utenPris, ["25 t gravemaskin m/ GPS"]);
 });
 
 test("ikke-numerisk celle i en fakturert kolonne stopper beregningen i stedet for å bli 0", () => {

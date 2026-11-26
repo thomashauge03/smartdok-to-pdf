@@ -166,7 +166,7 @@ export function Koblingsliste({
       open={open}
       onOpenChange={onOpenChange}
       tittel="Koblingsliste: maskin → produkt"
-      beskrivelse="Hver maskin i SmartDok peker på ett produkt i Tripletex, eller faktureres ikke. Forslag lagres bare når du trykker «Godkjenn»."
+      beskrivelse="Hver maskin i SmartDok peker på ett produkt i Tripletex, eller faktureres ikke. En maskin uten kobling legges på ordren som tekstlinje uten produkt. Forslag lagres bare når du trykker «Godkjenn»."
       onEscape={() => {
         if (velgerFor === null) return false;
         setVelgerFor(null);
@@ -316,7 +316,11 @@ function KoblingsRad({
               Produktet {l.produkttekst ? `«${l.produkttekst}» ` : ""}finnes ikke lenger i Tripletex. Velg et nytt.
             </p>
           )}
-          {!l && <p className="font-medium text-red-700">Mangler kobling</p>}
+          {!l && (
+            <p className="font-medium text-red-700">
+              Mangler kobling <span className="font-normal text-neutral-600">(går som tekstlinje)</span>
+            </p>
+          )}
           <span role="status" className="mt-0.5 flex items-center gap-1.5 text-xs">
             {lagrer ? (
               <span className="flex items-center gap-1.5 text-[#4a4a4a]">

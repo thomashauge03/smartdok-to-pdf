@@ -5,27 +5,40 @@ import type { ColMeta, Row } from "./smartdok-parser.ts";
 
 export type Produkt = { id: number; nummer: string; navn: string; pris: number | null };
 export type Kobling = { maskinId: number; faktureres: boolean; produktId: number | null };
-export type Ordrelinje = { produktId: number; produktnavn: string; antall: number; tekst: string; listepris: number | null };
+/**
+ * produktId null er en tekstlinje uten produkt: den legges på ordren med 0 kr
+ * og fylles ut i Tripletex (ordren er godkjenningen).
+ */
+export type Ordrelinje = { produktId: number | null; produktnavn: string; antall: number; tekst: string; listepris: number | null };
+/** Alt i advarsler er informasjon: ingenting her stopper sendingen. */
 export type Ordreberegning = {
   linjer: Ordrelinje[];
   timerIder: number[];
   advarsler: {
-    utenMaskin: number;
+    /** Personens timer (Timer-kolonnen) på rader uten fakturerbar maskin: lagt på som Grunnarbeider (602). */
+    somGrunnarbeider: number;
+    /** Rader uten __id (lagt til for hånd): står i PDF-en, blir aldri linjer. */
     haandlagde: number;
+    /** Maskiner uten kobling (eller med borte produkt): lagt på som tekstlinjer uten produkt. */
     utenKobling: string[];
+    /** Produkter uten pris i Tripletex: lagt på med 0 kr. */
     utenPris: string[];
+    /** 602, 608 eller 609 finnes ikke i Tripletex: lagt på som tekstlinjer med samme navn. */
+    manglerProdukt: string[];
+    /** «Overtid …»-kolonner uten produkt: blir ikke linjer. */
     ukjentOvertid: string[];
-    /** Overtidstimer på rader uten fakturert maskin: blir ikke linjer, raden merkes ikke. */
-    overtidUtenMaskin: number;
-    /** Maskin- og overtidstimer som alt er fakturert i SmartDok, og som derfor hoppes over. */
+    /** Timer som er lagt på ordren, men som alt er merket fakturert i SmartDok. */
     alleredeFakturert: number;
   };
 };
 
-const OVERTID: { label: string; nummer: string }[] = [
-  { label: "Overtid 50%", nummer: "608" },
-  { label: "Overtid 100%", nummer: "609" },
+const GRUNNARBEIDER = { nummer: "602", navn: "Grunnarbeider" };
+const OVERTID: { label: string; nummer: string; navn: string }[] = [
+  { label: "Overtid 50%", nummer: "608", navn: "50 % overtidsarbeid" },
+  { label: "Overtid 100%", nummer: "609", navn: "100 % overtidsarbeid" },
 ];
+
+const linjetekst = (navn: string) => `${navn} – arbeid utført iht. vedlegg`;
 
 // Cellene er norsk formatert («7,5», tom = 0). Alt annet er en feil som må vises, ikke gjettes på.
 function lesTall(celle: string | undefined, hvor: string): number {
@@ -61,16 +74,30 @@ export function beregnOrdrelinjer(
   const produktFraId = new Map(produkter.map((p) => [p.id, p]));
   const produktFraNummer = (nr: string) => produkter.find((p) => p.nummer === nr);
 
-  const sum = new Map<number, number>();
-  const leggTil = (p: Produkt, timer: number) => sum.set(p.id, (sum.get(p.id) ?? 0) + timer);
+  // Timene summeres per produkt (produktlinjer) og per navn (tekstlinjer), og rundes først til slutt.
+  const produktSum = new Map<number, number>();
+  const tekstSum = new Map<string, number>();
   const utenKobling = new Set<string>();
   const utenPris = new Set<string>();
+  const manglerProdukt = new Set<string>();
   const ukjentOvertid = new Set<string>();
   const timerIder = new Set<number>();
-  let utenMaskin = 0;
+  let somGrunnarbeider = 0;
   let haandlagde = 0;
-  let overtidUtenMaskin = 0;
   let alleredeFakturert = 0;
+
+  const paaProdukt = (p: Produkt, timer: number) => {
+    produktSum.set(p.id, (produktSum.get(p.id) ?? 0) + timer);
+    if (!p.pris) utenPris.add(p.navn);
+  };
+  const somTekst = (navn: string, timer: number) => tekstSum.set(navn, (tekstSum.get(navn) ?? 0) + timer);
+  // 602, 608 og 609 slås opp på nummer. Finnes de ikke i Tripletex, blir det tekstlinje med samme navn.
+  const paaStandard = (s: { nummer: string; navn: string }, timer: number) => {
+    const p = produktFraNummer(s.nummer);
+    if (p) return paaProdukt(p, timer);
+    manglerProdukt.add(`${s.nummer} ${s.navn}`);
+    somTekst(s.navn, timer);
+  };
 
   rows.forEach((row, radNr) => {
     const hvor = (kol: string) => `rad ${radNr + 1}, ${kol}`;
@@ -80,83 +107,70 @@ export function beregnOrdrelinjer(
     if (!/^[0-9]+$/.test(idTekst)) throw new Error(`Ugyldig __id «${idTekst}» (${hvor("__id")}).`);
     const id = Number(idTekst);
 
-    let harFakturertTimer = false; // linje laget fra denne raden
-    let harFakturertMaskin = false; // minst én maskin ga linje
-    let harMaskin = false; // minst én maskin med timer (også ukoblet eller faktureres:false)
-    let harIkkeFakturertMaskin = false; // maskin med timer som ikke ga linje fordi faktureres:false
-    let harAlleredeFakturert = false; // maskin med timer som alt er fakturert i SmartDok
+    let gaLinje = false; // minst én linje fra denne raden
+    let harFakturerbarMaskin = false; // maskin med timer som faktureres: koblet, ukoblet eller med borte produkt
 
     for (const s of slots) {
       const timer = lesTall(row[s.timer], hvor(`Maskintimer${s.i}`));
       if (timer <= 0) continue;
-      harMaskin = true;
-      // Alt fakturert i SmartDok (f.eks. fra før overgangen): aldri på ordren igjen, og
-      // ingen krav om kobling for en maskin som ikke skal faktureres herfra.
-      if (row[`__fakt_maskin${s.i}`] === "1") {
-        alleredeFakturert += timer;
-        harAlleredeFakturert = true;
-        continue;
-      }
       const k = kobling.get(Number(row[`__maskin${s.i}`] ?? ""));
-      if (k && !k.faktureres) { harIkkeFakturertMaskin = true; continue; } // bevisst ikke fakturert: ingen linje, ingen advarsel
-      const navn = (s.navn ? row[s.navn] : "")?.trim() || `Maskin ${s.i}`;
+      if (k && !k.faktureres) continue; // bevisst ikke fakturert: ingen linje
+      harFakturerbarMaskin = true;
+      gaLinje = true;
+      // Alt fakturert i SmartDok tas med likevel (godkjennes i Tripletex), men telles så det vises.
+      if (row[`__fakt_maskin${s.i}`] === "1") alleredeFakturert += timer;
       const p = k && k.produktId !== null ? produktFraId.get(k.produktId) : undefined;
-      if (!p) {
-        utenKobling.add(k && k.produktId !== null ? `${navn} (produktet finnes ikke lenger i Tripletex)` : navn);
-        continue;
-      }
-      leggTil(p, timer);
-      harFakturertTimer = true;
-      harFakturertMaskin = true;
-      if (!p.pris) utenPris.add(p.navn);
+      if (p) { paaProdukt(p, timer); continue; }
+      const navn = (s.navn ? row[s.navn] : "")?.trim() || `Maskin ${s.i}`;
+      utenKobling.add(k && k.produktId !== null ? `${navn} (produktet finnes ikke lenger i Tripletex)` : navn);
+      somTekst(navn, timer);
     }
 
+    // Overtid blir alltid linje, med eller uten maskin på raden.
     for (const o of overtidKolonner) {
       if (!o.key) continue;
       const timer = lesTall(row[o.key], hvor(o.label));
       if (timer <= 0) continue;
-      if (row[`__fakt_${o.key}`] === "1") { alleredeFakturert += timer; continue; }
-      // Overtid er et tillegg oppå maskintimene (spec). Uten fakturert maskin på samme rad
-      // blir den ingen linje, og raden merkes ikke, så den kan sendes når maskinen er på plass.
-      if (!harFakturertMaskin) { overtidUtenMaskin += timer; continue; }
-      const p = produktFraNummer(o.nummer);
-      if (!p) {
-        utenPris.add(`${o.nummer} ${o.label} (produktet finnes ikke i Tripletex)`);
-        continue;
-      }
-      leggTil(p, timer);
-      harFakturertTimer = true;
-      if (!p.pris) utenPris.add(p.navn);
+      if (row[`__fakt_${o.key}`] === "1") alleredeFakturert += timer;
+      paaStandard(o, timer);
+      gaLinje = true;
     }
     for (const c of ukjenteOvertid) {
       if (lesTall(row[c.key], hvor(c.label)) > 0) ukjentOvertid.add(c.label);
     }
 
-    // Bare rader som ga minst én linje, merkes som sendt; resten skal kunne sendes senere.
-    if (harFakturertTimer) timerIder.add(id);
-    // «Timer uten fakturerbar maskin»: ingen maskin ga linje, og ingen ukoblet maskin har eget varsel.
-    // Alt fakturerte maskiner har sitt eget varsel (alleredeFakturert). Kun advarsel, aldri sperre.
-    const ukoblet = harMaskin && !harFakturertMaskin && !harIkkeFakturertMaskin;
-    if (!harFakturertMaskin && !ukoblet && !harAlleredeFakturert && timerKey) utenMaskin += lesTall(row[timerKey], hvor("Timer"));
+    // Uten fakturerbar maskin (ingen maskin med timer, eller bare «faktureres ikke»):
+    // personens timer blir Grunnarbeider. En ukoblet maskin er en maskin (tekstlinje over).
+    if (!harFakturerbarMaskin && timerKey) {
+      const timer = lesTall(row[timerKey], hvor("Timer"));
+      if (timer > 0) {
+        paaStandard(GRUNNARBEIDER, timer);
+        somGrunnarbeider += timer;
+        gaLinje = true;
+      }
+    }
+
+    if (gaLinje) timerIder.add(id);
   });
 
-  const linjer: Ordrelinje[] = [...sum.entries()]
-    .map(([produktId, timer]) => {
-      const p = produktFraId.get(produktId)!;
-      return {
-        produktId, produktnavn: p.navn, antall: rund2(timer),
-        tekst: `${p.navn} – arbeid utført iht. vedlegg`, listepris: p.pris,
-      };
-    })
-    .sort((a, b) =>
-      produktFraId.get(a.produktId)!.nummer.localeCompare(produktFraId.get(b.produktId)!.nummer, "nb", { numeric: true }));
+  const produktlinjer = [...produktSum.entries()]
+    .map(([id, timer]) => ({ p: produktFraId.get(id)!, timer }))
+    .sort((a, b) => a.p.nummer.localeCompare(b.p.nummer, "nb", { numeric: true }))
+    .map(({ p, timer }): Ordrelinje => ({
+      produktId: p.id, produktnavn: p.navn, antall: rund2(timer), tekst: linjetekst(p.navn), listepris: p.pris,
+    }));
+  const tekstlinjer = [...tekstSum.entries()]
+    .sort(([a], [b]) => a.localeCompare(b, "nb", { numeric: true }))
+    .map(([navn, timer]): Ordrelinje => ({
+      produktId: null, produktnavn: navn, antall: rund2(timer), tekst: linjetekst(navn), listepris: null,
+    }));
 
   return {
-    linjer,
+    linjer: [...produktlinjer, ...tekstlinjer],
     timerIder: [...timerIder].sort((a, b) => a - b),
     advarsler: {
-      utenMaskin: rund2(utenMaskin), haandlagde, utenKobling: [...utenKobling], utenPris: [...utenPris],
-      ukjentOvertid: [...ukjentOvertid], overtidUtenMaskin: rund2(overtidUtenMaskin), alleredeFakturert: rund2(alleredeFakturert),
+      somGrunnarbeider: rund2(somGrunnarbeider), haandlagde, utenKobling: [...utenKobling], utenPris: [...utenPris],
+      manglerProdukt: [...manglerProdukt], ukjentOvertid: [...ukjentOvertid], alleredeFakturert: rund2(alleredeFakturert),
     },
   };
 }

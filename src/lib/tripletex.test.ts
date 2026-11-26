@@ -7,6 +7,7 @@ import {
   fjernMerkeInn,
   lagreKoblingInn,
   leggPaaOrdreInn,
+  leggPaaOrdreSvar,
   MAKS_PDF_BYTE,
   pdfForStor,
 } from "./tripletex.ts";
@@ -47,6 +48,29 @@ test("leggPaaOrdre avviser tomme lister, ugyldige datoer og tall", () => {
   assert.ok(!leggPaaOrdreInn.safeParse({ ...gyldig, ordre: { id: 0 } }).success);
   assert.ok(!leggPaaOrdreInn.safeParse({ ...gyldig, ordre: { ny: true, id: 1 } }).success);
   assert.ok(!leggPaaOrdreInn.safeParse({ ...gyldig, linjer: [{ produktId: 5, antall: 0, tekst: "x" }] }).success);
+});
+
+test("leggPaaOrdre: produktId null er en tekstlinje; 0, negativ og desimal avvises", () => {
+  const p = leggPaaOrdreInn.safeParse({ ...gyldig, linjer: [{ produktId: null, antall: 5, tekst: "Volvo L180G – arbeid utført iht. vedlegg" }] });
+  assert.ok(p.success);
+  assert.equal(p.data.linjer[0].produktId, null);
+  for (const produktId of [0, -1, 1.5, "5", undefined]) {
+    assert.ok(!leggPaaOrdreInn.safeParse({ ...gyldig, linjer: [{ produktId, antall: 1, tekst: "x" }] }).success, String(produktId));
+  }
+});
+
+test("leggPaaOrdreSvar godtar tekstlinjer (produktId null) og 0 kr", () => {
+  const svar = {
+    status: "sendt", kode: "ab12cd", ordrenummer: "10240", ordreId: 77,
+    linjer: [
+      { produktId: 5, antall: 7.5, pris: 0, rabatt: 0 },
+      { produktId: null, antall: 5, pris: 0, rabatt: 0 },
+    ],
+  };
+  const p = leggPaaOrdreSvar.safeParse(svar);
+  assert.ok(p.success);
+  assert.equal(p.data.linjer[1].produktId, null);
+  assert.ok(!leggPaaOrdreSvar.safeParse({ ...svar, linjer: [{ antall: 1, pris: 0, rabatt: 0 }] }).success);
 });
 
 test("kode må være seks tegn a-z og 0-9", () => {

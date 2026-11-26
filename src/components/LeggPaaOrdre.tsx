@@ -23,7 +23,7 @@ import {
 } from "@/lib/tripletex.functions";
 import { leggPaaOrdreInn, pdfForStor, PDF_FOR_STOR } from "@/lib/tripletex";
 import { UKJENT_UTFALL_FEIL } from "@/lib/adminbord-svar";
-import { beregnOrdrelinjer, type Ordreberegning, type Produkt } from "@/lib/ordrelinjer";
+import { beregnOrdrelinjer, type Ordreberegning, type Ordrelinje, type Produkt } from "@/lib/ordrelinjer";
 import type { ColMeta, Row } from "@/lib/smartdok-parser";
 import {
   alleredeSendte,
@@ -33,7 +33,9 @@ import {
   fmtKr,
   forklarInndatafeil,
   linjesum,
+  resultatnavn,
   sendingSperre,
+  SJEKK_I_TRIPLETEX,
   skjulteFaktureringskolonner,
   statusTekst,
   tilBase64,
@@ -90,6 +92,8 @@ export function LeggPaaOrdre({
   const [fase, setFase] = useState<Fase>("forhand");
   const [sendefeil, setSendefeil] = useState<Feil | null>(null);
   const [resultat, setResultat] = useState<LeggPaaOrdreSvar | null>(null);
+  // Linjene slik de ble sendt: tekstlinjene har ikke navn i svaret, og tabellen hentes på nytt etterpå.
+  const [sendteLinjer, setSendteLinjer] = useState<Ordrelinje[]>([]);
   const [oppdatering, setOppdatering] = useState<"venter" | "ok" | Feil | null>(null);
   // Sendingene på prosjektet: en uavklart sending sperrer nye (også etter at dialogen er lukket og åpnet igjen).
   const [sendingsvar, setSendingsvar] = useState<Sendingsvar | null>(null);
@@ -173,6 +177,7 @@ export function LeggPaaOrdre({
     setFase("forhand");
     setSendefeil(null);
     setResultat(null);
+    setSendteLinjer([]);
     setOppdatering(null);
     setSendingsvar(null);
     setTabellvarsel(null);
@@ -198,7 +203,13 @@ export function LeggPaaOrdre({
     if (!beregnet || !("b" in beregnet)) return null;
     return vurderForhandsvisning(beregnet.b, {
       alleredeSendt: alleredeSendte(rows, tripletexKey, beregnet.b.timerIder),
-      skjulteKolonner: skjulteFaktureringskolonner(rows, columns, synlige, (koblinger ?? []).map(tilKobling)),
+      skjulteKolonner: skjulteFaktureringskolonner(
+        rows,
+        columns,
+        synlige,
+        (koblinger ?? []).map(tilKobling),
+        beregnet.b.advarsler.somGrunnarbeider > 0,
+      ),
     });
   }, [beregnet, rows, columns, synlige, tripletexKey, koblinger]);
 
@@ -249,6 +260,7 @@ export function LeggPaaOrdre({
           return;
         }
         inn = p.data;
+        setSendteLinjer(beregnet.b.linjer);
       } catch (e) {
         // Ingenting er sendt ennå: trygt å prøve igjen.
         setSendefeil({ feil: `Kunne ikke lage PDF-en: ${e instanceof Error ? e.message : String(e)}` });
@@ -340,7 +352,7 @@ export function LeggPaaOrdre({
       {fase === "resultat" && resultat && (
         <Resultat
           r={resultat}
-          produktnavn={produktnavn}
+          navn={resultatnavn(resultat.linjer, sendteLinjer, produktnavn)}
           oppdatering={oppdatering}
           onSendinger={() => setSendingerAapen(true)}
         />
@@ -421,18 +433,27 @@ export function LeggPaaOrdre({
                 SmartDok. PDF-en med {rows.length}{" "}
                 {rows.length === 1 ? "rad" : "rader"} (den samme som «Last ned PDF» lager) legges ved ordren.
               </p>
-              {(vurdering.sperrer.length > 0 || vurdering.advarsler.length > 0) && (
+              {(vurdering.sperrer.length > 0 || vurdering.sjekk.length > 0 || vurdering.advarsler.length > 0) && (
                 <div className="space-y-2">
                   {vurdering.sperrer.map((m) => (
                     <Varsel key={m.id} tone="feil">
                       <p>{m.tekst}</p>
-                      {m.id === "utenKobling" && (
-                        <button type="button" className={`${knappMork} py-1.5 text-xs`} onClick={() => setKoblingerAapen(true)}>
+                    </Varsel>
+                  ))}
+                  {vurdering.sjekk.length > 0 && (
+                    <Varsel tone="advarsel" tittel={SJEKK_I_TRIPLETEX}>
+                      <ul className="list-disc space-y-1 pl-5">
+                        {vurdering.sjekk.map((m) => (
+                          <li key={m.id}>{m.tekst}</li>
+                        ))}
+                      </ul>
+                      {vurdering.sjekk.some((m) => m.id === "utenKobling") && (
+                        <button type="button" className={`${knappLys} py-1.5 text-xs`} onClick={() => setKoblingerAapen(true)}>
                           Åpne koblingslisten
                         </button>
                       )}
                     </Varsel>
-                  ))}
+                  )}
                   {vurdering.advarsler.map((m) => (
                     <Varsel key={m.id} tone="advarsel">
                       <p>{m.tekst}</p>
@@ -562,17 +583,22 @@ function Linjer({ b }: { b: Ordreberegning }) {
           </thead>
           <tbody>
             {b.linjer.map((l) => (
-              <tr key={l.produktId} className="border-t border-[#f0e3b0]">
+              <tr key={l.produktId ?? `tekst:${l.produktnavn}`} className="border-t border-[#f0e3b0]">
                 <td className="px-3 py-2">
                   <span className="font-medium">{l.produktnavn}</span>
+                  {l.produktId === null && <UtenProdukt />}
                   <span className="block text-xs text-neutral-500">{l.tekst}</span>
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">{fmtAntall(l.antall)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">
-                  {l.listepris ? fmtKr(l.listepris) : <span className="font-semibold text-red-700">mangler</span>}
+                  {l.listepris ? (
+                    fmtKr(l.listepris)
+                  ) : (
+                    <span className="text-xs font-semibold text-amber-800">0 kr – sett pris i Tripletex</span>
+                  )}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">
-                  {l.listepris ? fmtKr(linjesum(l.antall, l.listepris)) : "–"}
+                  {l.listepris ? fmtKr(linjesum(l.antall, l.listepris)) : fmtKr(0)}
                 </td>
               </tr>
             ))}
@@ -589,20 +615,30 @@ function Linjer({ b }: { b: Ordreberegning }) {
       </div>
       <p className="text-xs text-[#4a4a4a]/80">
         Prisene er listepriser fra produktene. Har kunden egen pris eller rabatt i Tripletex, bruker Tripletex den når linjene
-        legges inn; de faktiske prisene vises etterpå.
+        legges inn; de faktiske prisene vises etterpå. Ordren godkjennes i Tripletex før den faktureres.
       </p>
     </section>
   );
 }
 
+/** Merke på en tekstlinje: linjen har ikke produkt i Tripletex. */
+function UtenProdukt() {
+  return (
+    <span className="ml-2 inline-block rounded border border-amber-300 bg-amber-50 px-1.5 py-px align-middle text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+      uten produkt
+    </span>
+  );
+}
+
 function Resultat({
   r,
-  produktnavn,
+  navn,
   oppdatering,
   onSendinger,
 }: {
   r: LeggPaaOrdreSvar;
-  produktnavn: (id: number) => string;
+  /** Navnet på hver linje i r.linjer, i samme rekkefølge (resultatnavn). */
+  navn: string[];
   oppdatering: "venter" | "ok" | Feil | null;
   onSendinger: () => void;
 }) {
@@ -658,10 +694,19 @@ function Resultat({
               </thead>
               <tbody>
                 {r.linjer.map((l, i) => (
-                  <tr key={`${l.produktId}-${i}`} className="border-t border-[#f0e3b0]">
-                    <td className="px-3 py-2 font-medium">{produktnavn(l.produktId)}</td>
+                  <tr key={`${l.produktId ?? "tekst"}-${i}`} className="border-t border-[#f0e3b0]">
+                    <td className="px-3 py-2 font-medium">
+                      {navn[i]}
+                      {l.produktId === null && <UtenProdukt />}
+                    </td>
                     <td className="px-3 py-2 text-right tabular-nums">{fmtAntall(l.antall)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{fmtKr(l.pris)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {l.pris ? (
+                        fmtKr(l.pris)
+                      ) : (
+                        <span className="text-xs font-semibold text-amber-800">0 kr – sett pris i Tripletex</span>
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-right tabular-nums">{l.rabatt ? `${fmtAntall(l.rabatt)} %` : "–"}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{fmtKr(linjesum(l.antall, l.pris, l.rabatt))}</td>
                   </tr>
