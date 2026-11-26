@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
-import { skjemaFeil, uventet } from "./adminbord-svar";
+import { skjemaFeil, skjemaFeilSkriving, somSkrivefeil, uventet, uventetSkriving } from "./adminbord-svar";
 import type { Feil, Svar } from "./adminbord-svar";
 import {
   avklarInn,
@@ -93,12 +93,12 @@ export const leggPaaOrdre = createServerFn({ method: "POST" })
     try {
       const { kallAdminbord } = await import("./adminbord.server");
       const r = await kallAdminbord("/api/smartdok-pdf/legg-paa-ordre", { body: data });
-      if (!("json" in r)) return r;
+      if (!("json" in r)) return somSkrivefeil(r);
       const p = leggPaaOrdreSvar.safeParse(r.json);
-      if (!p.success) return skjemaFeil(p.error);
+      if (!p.success) return skjemaFeilSkriving(p.error);
       return { ok: true, sending: p.data };
     } catch (e) {
-      return uventet(e);
+      return uventetSkriving(e);
     }
   });
 
@@ -108,12 +108,12 @@ export const fjernMerke = createServerFn({ method: "POST" })
     try {
       const { kallAdminbord } = await import("./adminbord.server");
       const r = await kallAdminbord("/api/smartdok-pdf/fjern-merke", { body: data });
-      if (!("json" in r)) return r;
+      if (!("json" in r)) return somSkrivefeil(r);
       const p = statusSvar.safeParse(r.json);
-      if (!p.success) return skjemaFeil(p.error);
+      if (!p.success) return skjemaFeilSkriving(p.error);
       return { ok: true, resultat: p.data };
     } catch (e) {
-      return uventet(e);
+      return uventetSkriving(e);
     }
   });
 
@@ -123,12 +123,12 @@ export const avklarSending = createServerFn({ method: "POST" })
     try {
       const { kallAdminbord } = await import("./adminbord.server");
       const r = await kallAdminbord("/api/smartdok-pdf/avklar", { body: data });
-      if (!("json" in r)) return r;
+      if (!("json" in r)) return somSkrivefeil(r);
       const p = avklarSvar.safeParse(r.json);
-      if (!p.success) return skjemaFeil(p.error);
+      if (!p.success) return skjemaFeilSkriving(p.error);
       return { ok: true, resultat: p.data };
     } catch (e) {
-      return uventet(e);
+      return uventetSkriving(e);
     }
   });
 

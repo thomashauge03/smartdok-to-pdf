@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { feilSvar, normaliserAdminbordUrl, UTLOGGET, GENERELL_FEIL } from "./adminbord-svar.ts";
+import { feilSvar, normaliserAdminbordUrl, somSkrivefeil, TIDSAVBRUDD, UKJENT_UTFALL_FEIL, uventet, uventetSkriving, UTLOGGET, GENERELL_FEIL } from "./adminbord-svar.ts";
 import { feilmelding } from "./innlogging.ts";
 
 test("401 gir loggInn", () => {
@@ -36,4 +36,23 @@ test("adminbord-URL må være https, eller http mot localhost", () => {
   assert.equal(normaliserAdminbordUrl("http://localhost.evil.no"), null);
   assert.equal(normaliserAdminbordUrl(""), null);
   assert.equal(normaliserAdminbordUrl(undefined), null);
+});
+
+test("skriving uten svar gir ukjent utfall, ikke «prøv kortere periode»", () => {
+  const e = uventetSkriving(Object.assign(new Error("t"), { name: "TimeoutError" }));
+  assert.equal(e.feil, UKJENT_UTFALL_FEIL);
+  assert.equal(e.ukjentUtfall, true);
+  assert.ok(!e.feil.includes("kortere periode"));
+  assert.deepEqual(somSkrivefeil(feilSvar(504, null)), e);
+});
+
+test("andre feil på skriving beholdes uendret og uten flagg", () => {
+  assert.deepEqual(somSkrivefeil(feilSvar(409, "Ordren er stengt.")), { ok: false, feil: "Ordren er stengt." });
+  assert.equal(somSkrivefeil(UTLOGGET), UTLOGGET);
+});
+
+test("lesing beholder tidsavbruddmeldingen", () => {
+  const e = uventet(Object.assign(new Error("t"), { name: "TimeoutError" }));
+  assert.equal(e.feil, TIDSAVBRUDD);
+  assert.equal(e.ukjentUtfall, undefined);
 });

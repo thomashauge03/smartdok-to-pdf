@@ -63,3 +63,12 @@ test("en maskin som faktureres må ha produkt", () => {
   assert.ok(lagreKoblingInn.safeParse({ ...k, faktureres: false }).success);
   assert.ok(lagreKoblingInn.safeParse({ ...k, produktId: 9, produktnummer: "100", produktnavn: "Gravemaskin" }).success);
 });
+
+test("leggPaaOrdre speiler adminbordets sjekker: desimaler, doble timer, filnavn", () => {
+  assert.ok(leggPaaOrdreInn.safeParse({ ...gyldig, linjer: [{ produktId: 5, antall: 7.25, tekst: "x" }] }).success);
+  assert.ok(!leggPaaOrdreInn.safeParse({ ...gyldig, linjer: [{ produktId: 5, antall: 7.255, tekst: "x" }] }).success);
+  assert.ok(!leggPaaOrdreInn.safeParse({ ...gyldig, timerIder: [1, 1] }).success);
+  for (const filnavn of ["timer.txt", 'a"b.pdf', "a/b.pdf", "a\b.pdf", "a\nb.pdf"]) {
+    assert.ok(!leggPaaOrdreInn.safeParse({ ...gyldig, filnavn }).success, filnavn);
+  }
+});

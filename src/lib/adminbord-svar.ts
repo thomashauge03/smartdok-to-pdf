@@ -1,6 +1,6 @@
 import { feilmelding } from "./innlogging.ts";
 
-export type Feil = { ok: false; feil: string; loggInn?: true };
+export type Feil = { ok: false; feil: string; loggInn?: true; ukjentUtfall?: true };
 
 export const UTLOGGET: Feil = { ok: false, feil: "Du er logget ut. Logg inn på nytt.", loggInn: true };
 export const GENERELL_FEIL = "Fikk ikke kontakt med adminbordet.";
@@ -25,7 +25,7 @@ export function normaliserAdminbordUrl(rå: string | undefined): string | null {
   return null;
 }
 
-export type Svar<T> = ({ ok: true } & T) | { ok: false; feil: string; loggInn?: true };
+export type Svar<T> = ({ ok: true } & T) | Feil;
 
 // Logger bare stiene til feltene som ikke stemmer, aldri verdier.
 export function skjemaFeil(error: { issues: { path: PropertyKey[] }[] }): Feil {
@@ -37,4 +37,26 @@ export function uventet(e: unknown): Feil {
   console.error("Kallet til adminbordet feilet uventet:", e instanceof Error ? e.message : "ukjent feil");
   if (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError")) return { ok: false, feil: TIDSAVBRUDD };
   return { ok: false, feil: GENERELL_FEIL };
+}
+
+// Skriving: uten svar vet vi ikke om Tripletex tok imot. Da må brukeren få vite
+// at det ikke er trygt å sende på nytt, og flagget lar UI-et vise «Avklar».
+export const UKJENT_UTFALL_FEIL =
+  "Fikk ikke svar fra Tripletex i tide. Sendingen kan ha gått gjennom – ikke send på nytt, se «Sendinger» og bruk «Avklar».";
+
+/** Uventet feil (tidsavbrudd, nettfeil, kaste unntak) under en skriving. */
+export function uventetSkriving(e: unknown): Feil {
+  console.error("Skriving mot adminbordet feilet uventet:", e instanceof Error ? e.message : "ukjent feil");
+  return { ok: false, feil: UKJENT_UTFALL_FEIL, ukjentUtfall: true };
+}
+
+/** Gjør en feil fra kallAdminbord om til skrivefeil: 504 betyr også ukjent utfall. */
+export function somSkrivefeil(f: Feil): Feil {
+  return f.feil === TIDSAVBRUDD ? { ok: false, feil: UKJENT_UTFALL_FEIL, ukjentUtfall: true } : f;
+}
+
+/** Svaret kom, men var uleselig: også her vet vi ikke hva som ble gjort. */
+export function skjemaFeilSkriving(error: { issues: { path: PropertyKey[] }[] }): Feil {
+  skjemaFeil(error);
+  return { ok: false, feil: UKJENT_UTFALL_FEIL, ukjentUtfall: true };
 }
