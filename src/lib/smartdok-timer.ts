@@ -19,6 +19,8 @@ export type SmartdokTime = {
   fakturert: boolean
   underprosjekt: string          // '' hvis ingen
   maskin: string                 // maskinnavn for maskin-rader
+  maskinId: number | null        // SmartDok EquipmentId, bare på maskin-rader
+  eksterntMerke: string | null   // SmartDok ExportedExternalId; vårt format: «Tripletex ordre <nr> (<kode>)»
 }
 
 function fmtDato(iso: string): string {
@@ -36,6 +38,12 @@ function fmtKlokke(t: number): string {
 
 // Avrunder bort flyttallsstøy (0.1 + 0.2) før visning.
 const rund = (n: number) => Math.round(n * 1000) / 1000;
+
+function tripletexVisning(merke: string | null): string {
+  if (merke === null) return "Ikke sendt";
+  const m = merke.match(/^Tripletex ordre (\S+)/);
+  return m ? `Ordre ${m[1]}` : merke;
+}
 
 type Gruppe = {
   hoved: SmartdokTime;          // arbeidsraden, eller første tillegg/maskin hvis foreldreløs
@@ -83,6 +91,7 @@ export function byggTabell(
     ...tilleggNavn.map((raw) => ({ raw, tillegg: true })),
     { raw: "Fakturert" },
     ...(harUnderprosjekt ? [{ raw: "Underprosjekt" }] : []),
+    { raw: "Tripletex" },
   ];
   for (let i = 1; i <= antallMaskiner; i++) {
     overskrifter.push({ raw: `Maskinnavn${i}` }, { raw: `Maskin${i} Timer` });
@@ -109,9 +118,11 @@ export function byggTabell(
   });
   const nokkel = (raw: string) => basisNokkel.get(raw)!;
   const fakturertKey = nokkel("Fakturert");
+  const tripletexKey = nokkel("Tripletex");
   // Fakturert og Underprosjekt skal kunne filtreres (HEADER_CONFIG er delt med Excel-flyten og urørt).
   columns.forEach((c, i) => {
     if (!overskrifter[i].tillegg && (overskrifter[i].raw === "Fakturert" || overskrifter[i].raw === "Underprosjekt")) c.filter = true;
+    if (!overskrifter[i].tillegg && overskrifter[i].raw === "Tripletex") c.filter = true;
   });
 
   const sortert = [...liste].sort((a, b) =>
@@ -140,10 +151,15 @@ export function byggTabell(
     const antallFakt = alle.filter((t) => t.fakturert).length;
     row[nokkel("Fakturert")] = antallFakt === alle.length ? "Ja" : antallFakt === 0 ? "Nei" : "Delvis";
     if (harUnderprosjekt) row[nokkel("Underprosjekt")] = h.underprosjekt;
+    const merke = (g.arbeid ? [h] : [...g.tillegg, ...g.maskiner]).find((t) => t.eksterntMerke !== null)?.eksterntMerke ?? null;
+    row[nokkel("Tripletex")] = tripletexVisning(merke);
     g.maskiner.forEach((m, i) => {
       row[nokkel(`Maskinnavn${i + 1}`)] = m.maskin;
       row[nokkel(`Maskin${i + 1} Timer`)] = fmtNum(rund(m.mengde));
     });
+    // Skjulte nøkler (ikke i columns): id-ene brukes når appen sender timene til Tripletex.
+    row["__id"] = String(h.id);
+    g.maskiner.forEach((m, i) => { row[`__maskin${i + 1}`] = m.maskinId === null ? "" : String(m.maskinId); });
     return row;
   });
 
@@ -172,6 +188,7 @@ export function byggTabell(
     vedlegg: vedleggFraMaaneder(maaneder),
     populatedCols,
     fakturertKey,
+    tripletexKey,
   };
 }
 

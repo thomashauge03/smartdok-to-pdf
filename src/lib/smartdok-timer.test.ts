@@ -10,7 +10,7 @@ function arbeid(o: Partial<SmartdokTime> & { id: number }): SmartdokTime {
   return {
     maskinradId: null, type: "arbeid", dato: "2026-11-03", fra: 7.5, til: 15,
     navn: "Ola Test", aktivitet: "Graving", lonnsart: "Normal", kommentar: "",
-    mengde: 7.5, fakturert: false, underprosjekt: "", maskin: "", ...o,
+    mengde: 7.5, fakturert: false, underprosjekt: "", maskin: "", maskinId: null, eksterntMerke: null, ...o,
   };
 }
 const tillegg = (o: Partial<SmartdokTime> & { id: number }) =>
@@ -24,7 +24,7 @@ test("kolonnerekkefølge og Tid/Dato/Timer-format", () => {
   const t = byggTabell([arbeid({ id: 1 }), tillegg({ id: 1 }), maskin({ id: 1 })], prosjekt, periode);
   assert.deepEqual(labels(t), [
     "Dato", "Tid", "Navn", "Aktivitet", "Lønnsart", "Kommentar", "Timer",
-    "Overtid 50%", "Fakturert", "Maskinnavn1", "Maskintimer1",
+    "Overtid 50%", "Fakturert", "Tripletex", "Maskinnavn1", "Maskintimer1",
   ]);
   assert.equal(t.rows.length, 1);
   const r = t.rows[0];
@@ -193,4 +193,41 @@ test("fakturertKey er basiskolonnen selv om et tillegg heter «Fakturert»", () 
   assert.equal(t.columns.find((c) => c.key === t.fakturertKey)!.sum, undefined);
   assert.equal(t.columns.find((c) => c.key === t.fakturertKey)!.filter, true);
   assert.ok(!t.columns.find((c) => c.key === tilleggKol.key)!.filter);
+});
+
+test("skjulte nøkler __id og __maskin<i> er ikke i columns", () => {
+  const t = byggTabell([
+    arbeid({ id: 7 }),
+    maskin({ id: 7, maskin: "A", maskinId: 11 }),
+    maskin({ id: 7, maskin: "B", maskinId: null }),
+  ], prosjekt, periode);
+  const r = t.rows[0];
+  assert.equal(r["__id"], "7");
+  assert.equal(r["__maskin1"], "11");
+  assert.equal(r["__maskin2"], "");
+  assert.ok(!t.columns.some((c) => c.key.startsWith("__")));
+});
+
+test("foreldreløs gruppe har __id og henter merke fra første ikke-null", () => {
+  const t = byggTabell([
+    tillegg({ id: 9 }),
+    maskin({ id: 9, eksterntMerke: "Tripletex ordre 55 (x)" }),
+  ], prosjekt, periode);
+  assert.equal(t.rows[0]["__id"], "9");
+  assert.equal(t.rows[0][t.tripletexKey!], "Ordre 55");
+});
+
+test("Tripletex-kolonnen: ordre, annet merke og ikke sendt", () => {
+  const t = byggTabell([
+    arbeid({ id: 1, eksterntMerke: "Tripletex ordre 1234 (ab12cd)" }),
+    arbeid({ id: 2, eksterntMerke: "Fiken 9" }),
+    arbeid({ id: 3 }),
+  ], prosjekt, periode);
+  const k = t.tripletexKey!;
+  const kol = t.columns.find((c) => c.key === k)!;
+  assert.equal(kol.label, "Tripletex");
+  assert.equal(kol.filter, true);
+  assert.equal(kol.sum, undefined);
+  assert.deepEqual(t.rows.map((r) => r[k]), ["Ordre 1234", "Fiken 9", "Ikke sendt"]);
+  assert.ok(t.populatedCols.includes(k));
 });

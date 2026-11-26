@@ -271,7 +271,12 @@ function Index() {
     // «Delvis»-rader har ufakturerte timer, så de skal være med. Filteret gjelder alle filterkolonner,
     // også når Fakturert-kolonnen er skjult.
     const key = p.fakturertKey;
-    if (key) setFilters((f) => ({ ...f, [key]: new Set(["Nei", "Delvis"]) }));
+    const tKey = p.tripletexKey;
+    setFilters((f) => ({
+      ...f,
+      ...(key ? { [key]: new Set(["Nei", "Delvis"]) } : {}),
+      ...(tKey ? { [tKey]: new Set(["Ikke sendt"]) } : {}),
+    }));
   }, [visTabell]);
 
   const onDownload = async () => {

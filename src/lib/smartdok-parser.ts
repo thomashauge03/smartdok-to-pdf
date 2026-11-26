@@ -22,6 +22,8 @@ export type Parsed = {
   populatedCols: ColKey[];
   // Nøkkelen til basiskolonnen «Fakturert» (satt av byggTabell).
   fakturertKey?: ColKey;
+  // Nøkkelen til basiskolonnen «Tripletex» (satt av byggTabell).
+  tripletexKey?: ColKey;
 };
 
 // Known header → ColMeta config (key = normalized lowercase header)

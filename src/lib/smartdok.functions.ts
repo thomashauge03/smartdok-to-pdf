@@ -38,6 +38,8 @@ const timeSkjema = z.object({
   fakturert: z.boolean(),
   underprosjekt: z.string(),
   maskin: z.string(),
+  maskinId: z.number().nullable(),
+  eksterntMerke: z.string().nullable(),
 });
 const timerSkjema = z.object({ timer: z.array(timeSkjema) });
 
