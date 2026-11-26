@@ -54,8 +54,7 @@ Målt i SmartDok 2026-11-26 (90 dager, 1433 arbeidstimer):
   maskintimen. 97 % av arbeidstimene har minst én maskinrad. 235 har flere (maskin
   + tilleggsutstyr); hver maskinrad behandles for seg etter koblingslisten.
 - **Arbeidstimer uten maskinrad** (16 rader / 105 t på kundeprosjekter i 90
-  dager) blir ikke linjer av seg selv. Forhåndsvisningen viser dem som en
-  advarsel med antall timer, så brukeren ser dem før noe sendes.
+  dager) blir linjer på «Grunnarbeider» (602), se «Endring 2026-11-26» under.
 - **Overtid:** tilleggsrader med lønnsart «Overtid 50%» og «Overtid 100%» blir
   linjer med produktene «50 % overtidsarbeid» (608) og «100 % overtidsarbeid»
   (609), antall = timene fra tilleggsraden. **Overtid er et tillegg oppå
@@ -67,8 +66,10 @@ Målt i SmartDok 2026-11-26 (90 dager, 1433 arbeidstimer):
 - Linjene regnes ut fra **de samme radene som står i tabellen og PDF-en** etter
   filtrene (det er det «iht. vedlegg» betyr). Rader brukeren har lagt til for
   hånd, finnes ikke i SmartDok: de vises som en advarsel og blir ikke linjer.
-- En maskin uten kobling, eller et produkt uten pris, **stopper sendingen** med
-  en melding om hvilken maskin/hvilket produkt det gjelder.
+- En maskin uten kobling blir en tekstlinje uten produkt, og et produkt uten
+  pris legges på med 0 kr; begge vises i forhåndsvisningen og rettes i
+  Tripletex (se «Endring 2026-11-26» under). Endringen der går foran det som
+  ellers står om sperrer i dette dokumentet.
 
 ## Ikke mål
 
