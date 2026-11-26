@@ -50,12 +50,22 @@ create or replace function public.smartdok_pdf_kobling_endret()
 returns trigger
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, pg_temp
 as $$
 declare
   fra jsonb;
   til jsonb;
 begin
+  -- En oppdatering som ikke endrer noe gir ingen loggrad og ingen ny stempling.
+  if tg_op = 'UPDATE' and (old.faktureres, old.produkt_id, old.produktnummer,
+      old.produktnavn, old.maskinnavn) is not distinct from
+     (new.faktureres, new.produkt_id, new.produktnummer,
+      new.produktnavn, new.maskinnavn) then
+    new.endret_av := old.endret_av;
+    new.endret := old.endret;
+    return new;
+  end if;
+
   -- Alltid brukeren som faktisk skriver, aldri en verdi klienten sender med.
   new.endret_av := auth.uid();
   new.endret := now();
@@ -75,12 +85,15 @@ begin
     );
   end if;
 
-  insert into public.hendelseslogg (handling, utfort_av, utfort_av_epost, detaljer)
+  -- system_id er null hvis appen ikke er registrert i systemer; det skal ikke stoppe skrivingen.
+  insert into public.hendelseslogg (handling, utfort_av, utfort_av_epost, system_id, detaljer)
   values (
     'smartdok_pdf.kobling_endret',
     auth.uid(),
     (select u.email from auth.users u where u.id = auth.uid()),
-    jsonb_build_object('maskin_id', new.maskin_id, 'fra', fra, 'til', til)
+    (select s.id from public.systemer s where s.slug = 'smartdok-til-pdf'),
+    jsonb_build_object('maskin_id', new.maskin_id, 'maskinnavn', new.maskinnavn,
+                       'fra', fra, 'til', til)
   );
   return new;
 end;
@@ -114,6 +127,8 @@ create table if not exists public.smartdok_pdf_sending (
 alter table public.smartdok_pdf_sending enable row level security;
 revoke all on public.smartdok_pdf_sending from anon, authenticated;
 grant select on public.smartdok_pdf_sending to authenticated;
+-- Sekvensen får ikke rettigheter for anon/authenticated, som ellers kunne brenne id-er.
+revoke all on sequence public.smartdok_pdf_sending_id_seq from anon, authenticated;
 
 drop policy if exists "tilgang leser sending" on public.smartdok_pdf_sending;
 create policy "tilgang leser sending" on public.smartdok_pdf_sending

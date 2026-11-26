@@ -41,6 +41,7 @@ before(async () => {
       tid timestamptz not null default now()
     );
     alter table public.hendelseslogg enable row level security;
+    create table public.systemer (id uuid primary key, slug text not null);
     alter default privileges grant execute on functions to anon, authenticated;
     insert into auth.users (id, email) values
       ('${BRUKER}', 'bruker@example.no'), ('${ANNEN}', 'annen@example.no');
@@ -56,6 +57,7 @@ afterEach(async () => {
     delete from public.smartdok_pdf_produktkobling;
     delete from public.smartdok_pdf_sending;
     delete from public.hendelseslogg;
+    delete from public.systemer;
     select set_config('test.tilgang', '', false);
     select set_config('request.jwt.claim.sub', '', false);
   `);
@@ -210,4 +212,50 @@ test("ugyldig status på sending avvises", async () => {
 test("kode på sending er unik", async () => {
   await seedSending();
   await assert.rejects(seedSending(), /unique|duplicate/);
+});
+
+const SYSTEM = "00000000-0000-0000-0000-0000000000aa";
+
+test("loggraden får system_id fra systemer, og maskinnavn i detaljer", async () => {
+  await db.query(`insert into public.systemer (id, slug) values ($1, 'smartdok-til-pdf')`, [SYSTEM]);
+  await somBruker(true);
+  await db.exec(`insert into public.smartdok_pdf_produktkobling (maskin_id, maskinnavn, faktureres)
+                 values (20, 'Dumper', false)`);
+  await db.exec(`reset role`);
+  const r = await db.query<{ system_id: string; detaljer: { maskinnavn: string } }>(
+    `select system_id, detaljer from public.hendelseslogg`,
+  );
+  assert.equal(r.rows.length, 1);
+  assert.equal(r.rows[0].system_id, SYSTEM);
+  assert.equal(r.rows[0].detaljer.maskinnavn, "Dumper");
+});
+
+test("uten systemer-rad blir system_id null og skrivingen lykkes", async () => {
+  await somBruker(true);
+  await db.exec(`insert into public.smartdok_pdf_produktkobling (maskin_id, maskinnavn, faktureres)
+                 values (21, 'Tipp', false)`);
+  await db.exec(`reset role`);
+  const r = await db.query<{ system_id: string | null }>(
+    `select system_id from public.hendelseslogg`,
+  );
+  assert.equal(r.rows.length, 1);
+  assert.equal(r.rows[0].system_id, null);
+});
+
+test("oppdatering uten endring logger ikke", async () => {
+  await somBruker(true);
+  await db.exec(`insert into public.smartdok_pdf_produktkobling (maskin_id, maskinnavn, faktureres)
+                 values (22, 'Same', false)`);
+  await db.exec(`update public.smartdok_pdf_produktkobling set faktureres = false where maskin_id = 22`);
+  await db.exec(`reset role`);
+  const r = await db.query(`select 1 from public.hendelseslogg`);
+  assert.equal(r.rows.length, 1);
+});
+
+test("anon og authenticated har ikke rettigheter på sekvensen til sending", async () => {
+  await somBruker(true);
+  await assert.rejects(
+    db.exec(`select nextval('public.smartdok_pdf_sending_id_seq')`),
+    /permission denied/,
+  );
 });
