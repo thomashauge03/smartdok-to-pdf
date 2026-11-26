@@ -6,6 +6,7 @@ import type { Feil, Svar } from "./adminbord-svar";
 import {
   avklarInn,
   avklarSvar,
+  erSkriving,
   DATABASEFEIL,
   fjernMerkeInn,
   KOBLING_KOLONNER,
@@ -120,15 +121,17 @@ export const fjernMerke = createServerFn({ method: "POST" })
 export const avklarSending = createServerFn({ method: "POST" })
   .inputValidator(avklarInn)
   .handler(async ({ data }): Promise<Svar<{ resultat: AvklarSvar }>> => {
+    // «sjekk» er en lesing; bare frigi og merk kan ha skrevet noe.
+    const skriver = erSkriving(data.valg);
     try {
       const { kallAdminbord } = await import("./adminbord.server");
       const r = await kallAdminbord("/api/smartdok-pdf/avklar", { body: data });
-      if (!("json" in r)) return somSkrivefeil(r);
+      if (!("json" in r)) return skriver ? somSkrivefeil(r) : r;
       const p = avklarSvar.safeParse(r.json);
-      if (!p.success) return skjemaFeilSkriving(p.error);
+      if (!p.success) return skriver ? skjemaFeilSkriving(p.error) : skjemaFeil(p.error);
       return { ok: true, resultat: p.data };
     } catch (e) {
-      return uventetSkriving(e);
+      return skriver ? uventetSkriving(e) : uventet(e);
     }
   });
 

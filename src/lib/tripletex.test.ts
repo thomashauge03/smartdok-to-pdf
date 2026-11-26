@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   avklarInn,
   dekodetStorrelse,
+  erSkriving,
   fjernMerkeInn,
   lagreKoblingInn,
   leggPaaOrdreInn,
@@ -71,4 +72,15 @@ test("leggPaaOrdre speiler adminbordets sjekker: desimaler, doble timer, filnavn
   for (const filnavn of ["timer.txt", 'a"b.pdf', "a/b.pdf", "a\b.pdf", "a\nb.pdf"]) {
     assert.ok(!leggPaaOrdreInn.safeParse({ ...gyldig, filnavn }).success, filnavn);
   }
+});
+
+test("filnavn: xpdf avvises, navn med mellomrom godtas", () => {
+  assert.ok(!leggPaaOrdreInn.safeParse({ ...gyldig, filnavn: "xpdf" }).success);
+  assert.ok(leggPaaOrdreInn.safeParse({ ...gyldig, filnavn: "Timeliste juni.pdf" }).success);
+});
+
+test("bare frigi og merk regnes som skriving", () => {
+  assert.equal(erSkriving("sjekk"), false);
+  assert.equal(erSkriving("frigi"), true);
+  assert.equal(erSkriving("merk"), true);
 });
