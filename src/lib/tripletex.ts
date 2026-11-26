@@ -8,7 +8,7 @@ import { z } from "zod";
 // resten av kroppen (linjer, timer-id-er).
 export const MAKS_PDF_BYTE = 3 * 1024 * 1024;
 export const PDF_FOR_STOR =
-  "PDF-en er for stor til å sendes (maks 3 MB). Skjul noen kolonner eller send en kortere periode.";
+  "PDF-en er for stor til å sendes (maks 3 MB). Send en kortere periode, eller skjul noen kolonner.";
 
 /** Størrelsen filen får når base64-teksten dekodes, regnet ut fra lengden alene. */
 export function dekodetStorrelse(base64: string): number {

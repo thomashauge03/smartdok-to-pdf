@@ -6,6 +6,10 @@ import { leggPaaOrdreInn, lagreKoblingInn } from "./tripletex.ts";
 import {
   alleredeSendte,
   anbefaltAvklaring,
+  angreInn,
+  frigiTekst,
+  sendingSperre,
+  UAVKLART_SPERRE,
   byggLeggPaaOrdre,
   fmtDato,
   forklarInndatafeil,
@@ -98,11 +102,50 @@ test("gjeldendeStatus: startet over ti minutter er ukjent utfall", () => {
 });
 
 test("handlinger speiler adminbordets lovlige overganger", () => {
-  assert.deepEqual(handlinger("sendt"), { fjernMerke: true, avklar: false });
-  assert.deepEqual(handlinger("sendt_uten_vedlegg"), { fjernMerke: true, avklar: false });
-  assert.deepEqual(handlinger("sendt_uten_merke"), { fjernMerke: true, avklar: true });
-  assert.deepEqual(handlinger("ukjent_utfall"), { fjernMerke: false, avklar: true });
-  for (const s of ["angret", "feilet", "startet"]) assert.deepEqual(handlinger(s), { fjernMerke: false, avklar: false });
+  assert.deepEqual(handlinger("sendt"), { fjernMerke: true, avklar: false, merk: false });
+  assert.deepEqual(handlinger("sendt_uten_vedlegg"), { fjernMerke: true, avklar: false, merk: false });
+  assert.deepEqual(handlinger("sendt_uten_merke", false), { fjernMerke: true, avklar: true, merk: true });
+  assert.deepEqual(handlinger("ukjent_utfall", true), { fjernMerke: false, avklar: true, merk: true });
+  for (const s of ["angret", "feilet", "startet"]) {
+    assert.deepEqual(handlinger(s, true), { fjernMerke: false, avklar: false, merk: false });
+  }
+});
+
+test("handlinger: «Merk som sendt» skjules etter ukjent utfall på en eksisterende ordre", () => {
+  assert.equal(handlinger("ukjent_utfall", false).merk, false);
+  assert.equal(handlinger("ukjent_utfall", null).merk, false);
+  assert.equal(handlinger("ukjent_utfall", false).avklar, true);
+});
+
+test("frigiTekst: sendt uten merke sier at linjene står på ordren", () => {
+  assert.equal(
+    frigiTekst("sendt_uten_merke", "10240"),
+    "Linjene står på ordre 10240 i Tripletex. Fjern dem der først, ellers blir timene fakturert to ganger.",
+  );
+  assert.match(frigiTekst("ukjent_utfall", null), /sendbare igjen/);
+});
+
+test("sendingSperre: uavklarte sendinger og feil ved henting sperrer", () => {
+  const naa = Date.parse("2026-11-26T12:00:00Z");
+  const s = (status: string, endret: string | null = "2026-11-26T11:59:00Z") => ({ status, endret });
+  assert.equal(sendingSperre({ ok: true, sendinger: [] }, naa), null);
+  assert.equal(sendingSperre({ ok: true, sendinger: [s("sendt"), s("angret"), s("feilet"), s("sendt_uten_vedlegg")] }, naa), null);
+  for (const st of ["ukjent_utfall", "sendt_uten_merke", "startet"]) {
+    assert.deepEqual(sendingSperre({ ok: true, sendinger: [s("sendt"), s(st)] }, naa), { id: "uavklart", tekst: UAVKLART_SPERRE }, st);
+  }
+  // En gammel «startet» er ukjent utfall: sperrer fortsatt.
+  assert.equal(sendingSperre({ ok: true, sendinger: [s("startet", "2026-11-26T10:00:00Z")] }, naa)?.id, "uavklart");
+  const feil = sendingSperre({ ok: false, feil: "Du er logget ut.", loggInn: true }, naa);
+  assert.equal(feil?.id, "sendingerFeil");
+  assert.equal(feil?.loggInn, true);
+  assert.match(feil!.tekst, /logget ut/);
+});
+
+test("angreInn legger tilbake den forrige koblingen", () => {
+  const forrige = { maskin_id: 2, maskinnavn: "Cat 324 E", faktureres: true, produkt_id: 102, produktnummer: "102", produktnavn: "25 t gravemaskin" };
+  const inn = angreInn(forrige);
+  assert.deepEqual(inn, { maskinId: 2, maskinnavn: "Cat 324 E", faktureres: true, produktId: 102, produktnummer: "102", produktnavn: "25 t gravemaskin" });
+  assert.ok(lagreKoblingInn.safeParse(inn).success);
 });
 
 test("anbefaltAvklaring fremhever bare det adminbordet godtar", () => {
@@ -149,6 +192,28 @@ test("alleredeSendte ser bare på rader som skal merkes", () => {
   ];
   assert.deepEqual(alleredeSendte(rows, "tx", [10, 11]), ["Ordre 1234"]);
   assert.deepEqual(alleredeSendte(rows, undefined, [10]), []);
+});
+
+test("skjulteFaktureringskolonner: «Faktureres ikke» varsles ikke, skjult maskinnavn varsles", () => {
+  const columns: ColMeta[] = [
+    { key: "n1", label: "Maskinnavn1", defaultWidth: 1 },
+    { key: "m1", label: "Maskintimer1", defaultWidth: 1 },
+    { key: "n2", label: "Maskinnavn2", defaultWidth: 1 },
+    { key: "m2", label: "Maskintimer2", defaultWidth: 1 },
+  ];
+  const rows = [
+    { n1: "Ford Ranger", m1: "8", __maskin1: "13", n2: "Cat", m2: "2", __maskin2: "11" },
+    { n1: "Ford Ranger", m1: "4", __maskin1: "13", n2: "", m2: "", __maskin2: "" },
+  ];
+  const koblinger = [
+    { maskinId: 13, faktureres: false, produktId: null },
+    { maskinId: 11, faktureres: true, produktId: 102 },
+  ];
+  // Alt i kolonne 1 er firmabil (faktureres ikke): ingen varsel selv om begge er skjult.
+  assert.deepEqual(skjulteFaktureringskolonner(rows, columns, new Set(["m2"]), koblinger), ["Maskinnavn2"]);
+  assert.deepEqual(skjulteFaktureringskolonner(rows, columns, new Set(), koblinger), ["Maskinnavn2", "Maskintimer2"]);
+  // Uten koblinger vet vi ikke: alt med timer varsles.
+  assert.deepEqual(skjulteFaktureringskolonner(rows, columns, new Set(["n1", "n2"]), []), ["Maskintimer1", "Maskintimer2"]);
 });
 
 test("skjulteFaktureringskolonner: bare skjulte maskin- og overtidskolonner med timer", () => {

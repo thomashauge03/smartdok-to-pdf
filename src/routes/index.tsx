@@ -1,4 +1,4 @@
-import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect, useRouter } from "@tanstack/react-router";
 import { hentInnlogging, loggUt } from "@/lib/innlogging.functions";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -34,6 +34,7 @@ import { HentFraSmartdok, hentSmartdokTabell } from "@/components/HentFraSmartdo
 import { LeggPaaOrdre, type SmartdokKilde } from "@/components/LeggPaaOrdre";
 import { Sendinger } from "@/components/Sendinger";
 import { Checkbox } from "@/components/ui/checkbox";
+import { behold, BEKREFT_OPPDATERING, forhandsfiltre, TABELL_IKKE_OPPDATERT } from "@/lib/tabelloppsett";
 
 export const Route = createFileRoute("/")({
   // Låsen ligger på serveren: uten gyldig økt og tilgang rendres aldri siden.
@@ -90,6 +91,10 @@ function Index() {
   const [kilde, setKilde] = useState<SmartdokKilde | null>(null);
   const [ordreAapen, setOrdreAapen] = useState(false);
   const [sendingerAapen, setSendingerAapen] = useState(false);
+  // Feilmeldingen som skal ha lenke til innlogging (økta gikk ut under en ny henting).
+  const [loggInnFor, setLoggInnFor] = useState<string | null>(null);
+  // Brukeren har endret celler, lagt til eller slettet rader siden timene ble hentet.
+  const [endret, setEndret] = useState(false);
 
   const [filters, setFilters] = useState<Record<string, Set<string>>>({});
   const [dateSort, setDateSort] = useState<"none" | "asc" | "desc">("none");
@@ -207,16 +212,19 @@ function Index() {
       return next;
     });
 
-  const updateCell = (i: number, key: ColKey, value: string) =>
+  const updateCell = (i: number, key: ColKey, value: string) => {
+    setEndret(true);
     setParsed((p) => {
       if (!p) return p;
       return { ...p, rows: p.rows.map((r, idx) => (idx === i ? { ...r, [key]: value } : r)) };
     });
+  };
 
   const deleteRow = (i: number) => {
     // Deleting shifts every later index down by one, so both the highlight and
     // the exemption set have to follow.
     setJustAdded(null);
+    setEndret(true);
     setAddedRows((s) => {
       const next = new Set<number>();
       for (const idx of s) {
@@ -240,6 +248,7 @@ function Index() {
       const picked = filters[c.key];
       if (c.filter && !c.sum && picked?.size === 1) row[c.key] = [...picked][0];
     }
+    setEndret(true);
     setParsed({ ...parsed, rows: [...parsed.rows, row] });
     setAddedRows((s) => new Set(s).add(parsed.rows.length));
     setJustAdded(parsed.rows.length);
@@ -253,6 +262,7 @@ function Index() {
     setDateSort("none");
     setJustAdded(null);
     setAddedRows(new Set());
+    setEndret(false);
     setVisibleCols(new Set(p.populatedCols));
     setFilters(Object.fromEntries(p.columns.filter((c) => c.filter).map((c) => [c.key, new Set<string>()])));
     setColWidths(Object.fromEntries(p.columns.map((c) => [c.key, c.defaultWidth])));
@@ -279,14 +289,31 @@ function Index() {
     setKilde(k);
     // «Delvis»-rader har ufakturerte timer, så de skal være med. Filteret gjelder alle filterkolonner,
     // også når Fakturert-kolonnen er skjult.
-    const key = p.fakturertKey;
-    const tKey = p.tripletexKey;
-    setFilters((f) => ({
-      ...f,
-      ...(key ? { [key]: new Set(["Nei", "Delvis"]) } : {}),
-      ...(tKey ? { [tKey]: new Set(["Ikke sendt"]) } : {}),
-    }));
+    setFilters((f) => ({ ...f, ...forhandsfiltre(p) }));
   }, [visTabell]);
+
+  // Ferske verdier for oppdaterTabell/hentPaaNytt, som kalles etter at en sending er ferdig.
+  const tabellRef = useRef({ parsed, filters, visibleCols, colWidths, endret });
+  tabellRef.current = { parsed, filters, visibleCols, colWidths, endret };
+
+  /**
+   * Bytter timene, men beholder filtre, synlige kolonner, sortering, bredder og
+   * Prosjekt/Vedlegg slik brukeren har satt dem.
+   */
+  const oppdaterTabell = useCallback((p: Parsed) => {
+    const g = tabellRef.current;
+    const o = behold(
+      { columns: g.parsed?.columns ?? [], filters: g.filters, visibleCols: g.visibleCols, colWidths: g.colWidths },
+      p,
+    );
+    setParsed(p);
+    setFilters(o.filters);
+    setVisibleCols(o.visibleCols);
+    setColWidths(o.colWidths);
+    setAddedRows(new Set());
+    setJustAdded(null);
+    setEndret(false);
+  }, []);
 
   // Én kilde for PDF-en: «Last ned PDF» og vedlegget til Tripletex-ordren skal være like.
   const byggPdf = useCallback(
@@ -299,14 +326,24 @@ function Index() {
     return { data: doc.output("arraybuffer"), filnavn: pdfFilename(prosjekt, vedlegg) };
   }, [byggPdf, prosjekt, vedlegg]);
 
-  // Samme prosjekt og periode som sist, uten «Erstatte timene?»: brukeren har nettopp sendt dem.
-  const hentPaaNytt = useCallback(async (): Promise<string | null> => {
-    if (!kilde) return "Tabellen kom ikke fra SmartDok.";
+  // Samme prosjekt og periode som sist. Spør bare når brukerens endringer i tabellen ville gått tapt.
+  const hentPaaNytt = useCallback(async (): Promise<{ feil: string; loggInn?: boolean } | null> => {
+    if (!kilde) return { feil: "Tabellen kom ikke fra SmartDok." };
+    if (tabellRef.current.endret && !window.confirm(BEKREFT_OPPDATERING)) return { feil: TABELL_IKKE_OPPDATERT };
     const r = await hentSmartdokTabell(kilde);
-    if (!r.ok) return r.feil;
-    onHentet(r.tabell, kilde);
+    if (!r.ok) return { feil: r.feil, loggInn: r.loggInn };
+    oppdaterTabell(r.tabell);
     return null;
-  }, [kilde, onHentet]);
+  }, [kilde, oppdaterTabell]);
+
+  const visOppdateringsfeil = useCallback((f: { feil: string; loggInn?: boolean } | null) => {
+    if (!f) return;
+    setError(f.feil);
+    setLoggInnFor(f.loggInn ? f.feil : null);
+  }, []);
+  const hentPaaNyttMedFeil = useCallback(() => {
+    hentPaaNytt().then(visOppdateringsfeil, () => visOppdateringsfeil({ feil: "Kunne ikke hente timene på nytt." }));
+  }, [hentPaaNytt, visOppdateringsfeil]);
 
   const synligeKolonner = useMemo(() => new Set(visibleColList.map((c) => c.key)), [visibleColList]);
 
@@ -425,7 +462,7 @@ function Index() {
           onHentet={onHentet}
           harTabell={parsed !== null}
           onSendingEndret={(nr) => {
-            if (kilde?.nummer === nr) void hentPaaNytt().then((f) => f && setError(f));
+            if (kilde?.nummer === nr) hentPaaNyttMedFeil();
           }}
         />
 
@@ -433,7 +470,17 @@ function Index() {
         {error && (
           <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <div className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" />
-            <span className="flex-1">{error}</span>
+            <span className="flex-1">
+              {error}
+              {error === loggInnFor && (
+                <>
+                  {" "}
+                  <Link to="/logg-inn" className="font-medium underline underline-offset-2">
+                    Gå til innlogging
+                  </Link>
+                </>
+              )}
+            </span>
             <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600"><X className="h-4 w-4" /></button>
           </div>
         )}
@@ -812,7 +859,7 @@ function Index() {
             open={sendingerAapen}
             onOpenChange={setSendingerAapen}
             prosjekt={{ nummer: kilde.nummer, navn: kilde.navn }}
-            onEndret={() => void hentPaaNytt().then((f) => f && setError(f))}
+            onEndret={hentPaaNyttMedFeil}
           />
         </>
       )}

@@ -11,7 +11,9 @@ import {
 } from "@/components/SmartdokDialog";
 import { hentKoblinger, hentSmartdokMaskiner, hentTripletexProdukter, lagreKobling } from "@/lib/tripletex.functions";
 import type { Produkt } from "@/lib/ordrelinjer";
+import type { LagreKoblingInn } from "@/lib/tripletex";
 import {
+  angreInn,
   fmtKr,
   koblingsrader,
   lagreInn,
@@ -53,6 +55,21 @@ export function Koblingsliste({
   // Lagret i denne runden: blir stående synlige med «Lagret», også under «Bare de som mangler».
   const [lagretNaa, setLagretNaa] = useState<Set<number>>(new Set());
   const generasjon = useRef(0);
+  // Rett etter «Faktureres ikke»: den forrige koblingen, så «Angre» kan legge den tilbake i noen sekunder.
+  const [angre, setAngre] = useState<Record<number, KoblingRad>>({});
+  const angreTimere = useRef(new Map<number, ReturnType<typeof setTimeout>>());
+
+  const glemAngre = useCallback((id: number) => {
+    const t = angreTimere.current.get(id);
+    if (t) clearTimeout(t);
+    angreTimere.current.delete(id);
+    setAngre(({ [id]: _, ...rest }) => rest);
+  }, []);
+
+  useEffect(() => {
+    const timere = angreTimere.current;
+    return () => timere.forEach((t) => clearTimeout(t));
+  }, []);
 
   const last = useCallback(async () => {
     const gen = ++generasjon.current;
@@ -85,6 +102,9 @@ export function Koblingsliste({
     setRadfeil({});
     setVelgerFor(null);
     setLagretNaa(new Set());
+    angreTimere.current.forEach((t) => clearTimeout(t));
+    angreTimere.current.clear();
+    setAngre({});
     void last();
   }, [open, bareMangler, last]);
 
@@ -98,15 +118,23 @@ export function Koblingsliste({
   );
   const antallMangler = rader?.filter((r) => r.mangler && r.aktiv).length ?? 0;
 
-  const lagre = async (rad: Koblingsrad, valg: { faktureres: false } | { produkt: Produkt }) => {
-    if (lagrer[rad.maskinId]) return;
-    setLagrer((s) => ({ ...s, [rad.maskinId]: true }));
-    setRadfeil(({ [rad.maskinId]: _, ...rest }) => rest);
-    const inn = lagreInn(rad, valg);
+  const lagre = (rad: Koblingsrad, valg: { faktureres: false } | { produkt: Produkt }) => {
+    const forrige = koblinger?.find((k) => k.maskin_id === rad.maskinId);
+    // Angre gir bare mening når det fantes en kobling til et produkt å gå tilbake til.
+    const angreTil = "faktureres" in valg && forrige?.faktureres && forrige.produkt_id !== null ? forrige : null;
+    void skriv(lagreInn(rad, valg), angreTil);
+  };
+
+  const skriv = async (inn: LagreKoblingInn, angreTil: KoblingRad | null) => {
+    const id = inn.maskinId;
+    if (lagrer[id]) return;
+    glemAngre(id);
+    setLagrer((s) => ({ ...s, [id]: true }));
+    setRadfeil(({ [id]: _, ...rest }) => rest);
     try {
       const svar = await lagreKobling({ data: inn });
       if (!svar.ok) {
-        setRadfeil((s) => ({ ...s, [rad.maskinId]: { feil: svar.feil, loggInn: !!svar.loggInn } }));
+        setRadfeil((s) => ({ ...s, [id]: { feil: svar.feil, loggInn: !!svar.loggInn } }));
         return;
       }
       const ny: KoblingRad = {
@@ -120,12 +148,16 @@ export function Koblingsliste({
       setKoblinger((ks) => [...(ks ?? []).filter((k) => k.maskin_id !== ny.maskin_id), ny]);
       setVelgerFor(null);
       setLagretNaa((s) => new Set(s).add(ny.maskin_id));
+      if (angreTil) {
+        setAngre((a) => ({ ...a, [id]: angreTil }));
+        angreTimere.current.set(id, setTimeout(() => glemAngre(id), 8000));
+      }
       onEndret?.();
     } catch (e) {
       console.error("Lagring av kobling feilet:", e instanceof Error ? e.message : "ukjent feil");
-      setRadfeil((s) => ({ ...s, [rad.maskinId]: { feil: "Kunne ikke lagre koblingen. Prøv igjen." } }));
+      setRadfeil((s) => ({ ...s, [id]: { feil: "Kunne ikke lagre koblingen. Prøv igjen." } }));
     } finally {
-      setLagrer(({ [rad.maskinId]: _, ...rest }) => rest);
+      setLagrer(({ [id]: _, ...rest }) => rest);
     }
   };
 
@@ -210,7 +242,12 @@ export function Koblingsliste({
                   lagret={lagretNaa.has(r.maskinId)}
                   velgerAapen={velgerFor === r.maskinId}
                   onVelger={(aapen) => setVelgerFor(aapen ? r.maskinId : null)}
-                  onLagre={(valg) => void lagre(r, valg)}
+                  onLagre={(valg) => lagre(r, valg)}
+                  angre={angre[r.maskinId] ?? null}
+                  onAngre={() => {
+                    const forrige = angre[r.maskinId];
+                    if (forrige) void skriv(angreInn(forrige), null);
+                  }}
                 />
               ))}
             </ul>
@@ -230,6 +267,8 @@ function KoblingsRad({
   velgerAapen,
   onVelger,
   onLagre,
+  angre,
+  onAngre,
 }: {
   rad: Koblingsrad;
   produkter: Produkt[];
@@ -239,6 +278,9 @@ function KoblingsRad({
   velgerAapen: boolean;
   onVelger: (aapen: boolean) => void;
   onLagre: (valg: { faktureres: false } | { produkt: Produkt }) => void;
+  /** Koblingen før «Faktureres ikke», mens «Angre» vises. */
+  angre: KoblingRad | null;
+  onAngre: () => void;
 }) {
   const l = rad.lagret;
   const faktureresIkke = !!l && !l.faktureres;
@@ -281,8 +323,20 @@ function KoblingsRad({
                 <Spinner /> Lagrer…
               </span>
             ) : lagret && !feil ? (
-              <span className="flex items-center gap-1 font-medium text-green-800">
-                <Check className="h-3.5 w-3.5" aria-hidden /> Lagret
+              <span className="flex items-center gap-2">
+                <span className="flex items-center gap-1 font-medium text-green-800">
+                  <Check className="h-3.5 w-3.5" aria-hidden /> Lagret
+                </span>
+                {angre && (
+                  <button
+                    type="button"
+                    onClick={onAngre}
+                    className="rounded font-medium text-[#4a4a4a] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4a4a4a]"
+                    aria-label={`Angre: koble ${rad.navn} til ${[angre.produktnummer, angre.produktnavn].filter(Boolean).join(" ")} igjen`}
+                  >
+                    Angre
+                  </button>
+                )}
               </span>
             ) : null}
           </span>

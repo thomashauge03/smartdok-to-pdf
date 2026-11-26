@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ExternalLink } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import {
   Feilmelding,
   SmartdokDialog,
@@ -14,6 +15,7 @@ import { Sendinger } from "@/components/Sendinger";
 import {
   hentApneOrdrer,
   hentKoblinger,
+  hentSendinger,
   hentTripletexProdukter,
   leggPaaOrdre,
   type ApenOrdre,
@@ -31,6 +33,7 @@ import {
   fmtKr,
   forklarInndatafeil,
   linjesum,
+  sendingSperre,
   skjulteFaktureringskolonner,
   statusTekst,
   tilBase64,
@@ -44,6 +47,7 @@ import {
 export type SmartdokKilde = { nummer: string; navn: string; fra: string; til: string };
 
 type Feil = { feil: string; loggInn?: boolean };
+type Sendingsvar = Parameters<typeof sendingSperre>[0];
 type Valg = "ny" | number | null;
 type Fase = "forhand" | "sender" | "resultat" | "uavklart";
 
@@ -74,8 +78,8 @@ export function LeggPaaOrdre({
   tripletexKey?: string;
   /** Samme PDF som «Last ned PDF». */
   lagPdf: () => Promise<{ data: ArrayBuffer; filnavn: string }>;
-  /** Henter timene fra SmartDok på nytt. Gir null når det gikk, ellers en feilmelding. */
-  hentPaaNytt: () => Promise<string | null>;
+  /** Henter timene fra SmartDok på nytt. Gir null når det gikk, ellers en feil. */
+  hentPaaNytt: () => Promise<Feil | null>;
 }) {
   const [produkter, setProdukter] = useState<Produkt[] | null>(null);
   const [koblinger, setKoblinger] = useState<KoblingRad[] | null>(null);
@@ -86,7 +90,12 @@ export function LeggPaaOrdre({
   const [fase, setFase] = useState<Fase>("forhand");
   const [sendefeil, setSendefeil] = useState<Feil | null>(null);
   const [resultat, setResultat] = useState<LeggPaaOrdreSvar | null>(null);
-  const [oppdatering, setOppdatering] = useState<"venter" | "ok" | { feil: string } | null>(null);
+  const [oppdatering, setOppdatering] = useState<"venter" | "ok" | Feil | null>(null);
+  // Sendingene på prosjektet: en uavklart sending sperrer nye (også etter at dialogen er lukket og åpnet igjen).
+  const [sendingsvar, setSendingsvar] = useState<Sendingsvar | null>(null);
+  const [sendingSjekkTid, setSendingSjekkTid] = useState(0);
+  // Feil fra å hente tabellen på nytt etter en endring under Sendinger.
+  const [tabellvarsel, setTabellvarsel] = useState<Feil | null>(null);
   const [koblingerAapen, setKoblingerAapen] = useState(false);
   const [sendingerAapen, setSendingerAapen] = useState(false);
   const sender = useRef(false);
@@ -124,6 +133,28 @@ export function LeggPaaOrdre({
     }
   }, [kilde.nummer]);
 
+  const lastSendinger = useCallback(async () => {
+    let svar: Sendingsvar;
+    try {
+      const s = await hentSendinger({ data: { prosjekt: kilde.nummer } });
+      svar = s.ok ? { ok: true, sendinger: s.sendinger } : { ok: false, feil: s.feil, loggInn: !!s.loggInn };
+    } catch (e) {
+      console.error("Henting av sendinger feilet:", e instanceof Error ? e.message : "ukjent feil");
+      svar = { ok: false, feil: "Kunne ikke hente sendingene. Prøv igjen." };
+    }
+    setSendingsvar(svar);
+    setSendingSjekkTid(Date.now());
+  }, [kilde.nummer]);
+
+  const oppdaterTabell = useCallback(async (): Promise<Feil | null> => {
+    try {
+      return await hentPaaNytt();
+    } catch (e) {
+      console.error("Henting av timene på nytt feilet:", e instanceof Error ? e.message : "ukjent feil");
+      return { feil: "Kunne ikke hente timene på nytt." };
+    }
+  }, [hentPaaNytt]);
+
   const lastKoblinger = useCallback(async () => {
     try {
       const k = await hentKoblinger();
@@ -143,8 +174,16 @@ export function LeggPaaOrdre({
     setSendefeil(null);
     setResultat(null);
     setOppdatering(null);
+    setSendingsvar(null);
+    setTabellvarsel(null);
     void last();
-  }, [open, last]);
+    void lastSendinger();
+  }, [open, last, lastSendinger]);
+
+  const sendingsperre = useMemo(
+    () => (sendingsvar ? sendingSperre(sendingsvar, sendingSjekkTid) : null),
+    [sendingsvar, sendingSjekkTid],
+  );
 
   const beregnet = useMemo((): { b: Ordreberegning } | { feil: string } | null => {
     if (!produkter || !koblinger) return null;
@@ -159,15 +198,18 @@ export function LeggPaaOrdre({
     if (!beregnet || !("b" in beregnet)) return null;
     return vurderForhandsvisning(beregnet.b, {
       alleredeSendt: alleredeSendte(rows, tripletexKey, beregnet.b.timerIder),
-      skjulteKolonner: skjulteFaktureringskolonner(rows, columns, synlige),
+      skjulteKolonner: skjulteFaktureringskolonner(rows, columns, synlige, (koblinger ?? []).map(tilKobling)),
     });
-  }, [beregnet, rows, columns, synlige, tripletexKey]);
+  }, [beregnet, rows, columns, synlige, tripletexKey, koblinger]);
 
   const valgtOrdre = typeof valg === "number" ? ordrer?.find((o) => o.id === valg) ?? null : null;
   const kanSende =
     fase === "forhand" &&
     !laster &&
     !lastefeil &&
+    // Fail closed: uten svar fra sendingslisten sendes ingenting.
+    sendingsvar !== null &&
+    sendingsperre === null &&
     ordrer !== null &&
     valg !== null &&
     !!beregnet &&
@@ -233,8 +275,8 @@ export function LeggPaaOrdre({
       setFase("resultat");
       // Tabellen hentes på nytt så Tripletex-kolonnen viser ordren.
       setOppdatering("venter");
-      const f = await hentPaaNytt().catch(() => "Kunne ikke hente timene på nytt.");
-      setOppdatering(f === null ? "ok" : { feil: f });
+      const f = await oppdaterTabell();
+      setOppdatering(f ?? "ok");
     } finally {
       sender.current = false;
     }
@@ -266,7 +308,7 @@ export function LeggPaaOrdre({
         >
           Sendinger
         </button>
-        {fase === "forhand" && (vurdering?.sperrer.length || (beregnet && "feil" in beregnet)) ? (
+        {fase === "forhand" && (sendingsperre || vurdering?.sperrer.length || (beregnet && "feil" in beregnet)) ? (
           <span className="text-xs font-medium text-red-700">Kan ikke sendes før det som står i rødt er rettet.</span>
         ) : fase === "forhand" && !laster && ordrer && valg === null ? (
           <span className="text-xs text-[#4a4a4a]/80">Velg ordre først.</span>
@@ -318,8 +360,32 @@ export function LeggPaaOrdre({
         </div>
       )}
 
+      {tabellvarsel && <Feilmelding tone="advarsel" feil={tabellvarsel.feil} loggInn={tabellvarsel.loggInn} />}
+
       {(fase === "forhand" || fase === "sender") && (
         <>
+          {sendingsperre && (
+            <div role="alert" className="space-y-2 rounded-lg border-2 border-red-400 bg-red-50 px-4 py-3 text-sm text-red-900">
+              <p className="font-semibold">{sendingsperre.tekst}</p>
+              {sendingsperre.loggInn ? (
+                <Link to="/logg-inn" className="font-medium underline underline-offset-2">
+                  Gå til innlogging
+                </Link>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {sendingsperre.id === "uavklart" ? (
+                    <button type="button" className={`${knappMork} py-1.5 text-xs`} onClick={() => setSendingerAapen(true)}>
+                      Åpne Sendinger
+                    </button>
+                  ) : (
+                    <button type="button" className={`${knappLys} py-1.5 text-xs`} onClick={() => void lastSendinger()}>
+                      Prøv igjen
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           {laster && (
             <p className="flex items-center gap-2 text-sm text-[#4a4a4a]" role="status">
               <Spinner /> Henter produkter, koblinger og åpne ordrer fra Tripletex…
@@ -389,9 +455,16 @@ export function LeggPaaOrdre({
       />
       <Sendinger
         open={sendingerAapen}
-        onOpenChange={setSendingerAapen}
+        onOpenChange={(o) => {
+          setSendingerAapen(o);
+          // Etter avklaring kan sperren være borte: sjekk listen på nytt.
+          if (!o) void lastSendinger();
+        }}
         prosjekt={{ nummer: kilde.nummer, navn: kilde.navn }}
-        onEndret={() => void hentPaaNytt()}
+        onEndret={() => {
+          void lastSendinger();
+          void oppdaterTabell().then(setTabellvarsel);
+        }}
       />
     </SmartdokDialog>
   );
@@ -530,7 +603,7 @@ function Resultat({
 }: {
   r: LeggPaaOrdreSvar;
   produktnavn: (id: number) => string;
-  oppdatering: "venter" | "ok" | { feil: string } | null;
+  oppdatering: "venter" | "ok" | Feil | null;
   onSendinger: () => void;
 }) {
   const t = statusTekst(r.status);
@@ -617,11 +690,11 @@ function Resultat({
         {oppdatering === "ok" && "Timetabellen er hentet på nytt, og Tripletex-kolonnen viser ordren."}
       </p>
       {oppdatering && typeof oppdatering === "object" && (
-        <Varsel tone="advarsel">
-          <p>
-            {oppdatering.feil} Timetabellen viser ikke sendingen ennå: hent timene på nytt før du sender noe mer.
-          </p>
-        </Varsel>
+        <Feilmelding
+          tone="advarsel"
+          feil={`${oppdatering.feil} Ikke send noe mer før timene er hentet på nytt.`}
+          loggInn={oppdatering.loggInn}
+        />
       )}
     </div>
   );

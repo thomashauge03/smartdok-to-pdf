@@ -10,7 +10,14 @@ import {
   knappMork,
 } from "@/components/SmartdokDialog";
 import { avklarSending, fjernMerke, hentSendinger, type AvklarSvar, type Sending } from "@/lib/tripletex.functions";
-import { anbefaltAvklaring, gjeldendeStatus, handlinger, statusTekst, tripletexOrdreUrl } from "@/lib/tripletex-visning";
+import {
+  anbefaltAvklaring,
+  frigiTekst,
+  gjeldendeStatus,
+  handlinger,
+  statusTekst,
+  tripletexOrdreUrl,
+} from "@/lib/tripletex-visning";
 
 type Feil = { feil: string; loggInn?: boolean; ukjentUtfall?: boolean };
 type Sjekk = Extract<AvklarSvar, { funnet: boolean }>;
@@ -134,7 +141,7 @@ function SendingKort({
 }) {
   const status = gjeldendeStatus(s.status, s.endret, naa);
   const tekst = statusTekst(status);
-  const kan = handlinger(status);
+  const kan = handlinger(status, s.ny_ordre);
   const [steg, setSteg] = useState<Steg>(null);
   const [arbeid, setArbeid] = useState<Arbeid>(null);
   const [sjekk, setSjekk] = useState<Sjekk | null>(null);
@@ -269,20 +276,23 @@ function SendingKort({
             </p>
           )}
           <div className={`flex flex-wrap gap-2 ${steg === null ? "" : "hidden"}`}>
-            <button
-              type="button"
-              className={`${anbefalt === "merk" ? knappMork : knappLys} py-1.5 text-xs`}
-              disabled={travel}
-              onClick={() => void kjor("merk")}
-            >
-              {arbeid === "merk" ? (
-                <>
-                  <Spinner lys={anbefalt === "merk"} /> Merker…
-                </>
-              ) : (
-                "Merk som sendt"
-              )}
-            </button>
+            {/* Adminbordet godtar aldri «merk» etter ukjent utfall på en eksisterende ordre. */}
+            {kan.merk && (
+              <button
+                type="button"
+                className={`${anbefalt === "merk" ? knappMork : knappLys} py-1.5 text-xs`}
+                disabled={travel}
+                onClick={() => void kjor("merk")}
+              >
+                {arbeid === "merk" ? (
+                  <>
+                    <Spinner lys={anbefalt === "merk"} /> Merker…
+                  </>
+                ) : (
+                  "Merk som sendt"
+                )}
+              </button>
+            )}
             <button
               type="button"
               className={`${anbefalt === "frigi" ? knappMork : knappLys} py-1.5 text-xs`}
@@ -333,8 +343,7 @@ function SendingKort({
           fare
           tekst={
             <>
-              <strong>Frigi timene?</strong> De blir sendbare igjen og kan legges på en ordre på nytt. Gjør dette bare når
-              linjene fra denne sendingen ikke står på ordren i Tripletex, eller du har fjernet dem der.
+              <strong>Frigi timene?</strong> {frigiTekst(status, sjekk?.ordrenummer ?? s.ordrenummer)}
             </>
           }
           ja="Frigi timene"

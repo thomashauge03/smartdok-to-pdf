@@ -123,12 +123,59 @@ export function gjeldendeStatus(status: string, endret: string | null, naa: numb
   return status;
 }
 
-/** Hvilke knapper en sending får. Serveren avgjør likevel; dette er bare hva som vises. */
-export function handlinger(status: string): { fjernMerke: boolean; avklar: boolean } {
+/**
+ * Hvilke knapper en sending får. Serveren avgjør likevel; dette er bare hva som vises.
+ * «Merk som sendt» etter ukjent utfall godtas bare på en ordre sendingen selv laget
+ * (adminbordets kanMerke), så på en eksisterende ordre vises den ikke.
+ */
+export function handlinger(
+  status: string,
+  nyOrdre: boolean | null = null,
+): { fjernMerke: boolean; avklar: boolean; merk: boolean } {
+  const avklar = ["ukjent_utfall", "sendt_uten_merke"].includes(status);
   return {
     fjernMerke: ["sendt", "sendt_uten_vedlegg", "sendt_uten_merke"].includes(status),
-    avklar: ["ukjent_utfall", "sendt_uten_merke"].includes(status),
+    avklar,
+    merk: status === "sendt_uten_merke" || (status === "ukjent_utfall" && nyOrdre === true),
   };
+}
+
+/** Teksten i bekreftelsen før «Frigi timene». */
+export function frigiTekst(status: string, ordrenummer: string | null): string {
+  if (status === "sendt_uten_merke") {
+    return (
+      `Linjene står på ordre ${ordrenummer ?? "(ukjent nummer)"} i Tripletex. ` +
+      "Fjern dem der først, ellers blir timene fakturert to ganger."
+    );
+  }
+  return (
+    "Timene blir sendbare igjen og kan legges på en ordre på nytt. Gjør dette bare når linjene fra denne " +
+    "sendingen ikke står på ordren i Tripletex, eller du har fjernet dem der."
+  );
+}
+
+export const UAVKLART_SPERRE = "Det finnes en sending som ikke er avklart. Avklar den under Sendinger før du sender mer.";
+
+/**
+ * Sperre fra sendingslisten: en sending som ikke er avklart (ukjent utfall, sendt
+ * uten merke, eller startet for under ti minutter siden) stopper nye sendinger.
+ * Kan listen ikke hentes, sperres det også: vi vet ikke om noe henger.
+ */
+export function sendingSperre(
+  svar: { ok: true; sendinger: { status: string; endret: string | null }[] } | { ok: false; feil: string; loggInn?: boolean },
+  naa: number,
+): (Melding & { loggInn?: boolean }) | null {
+  if (!svar.ok) {
+    return {
+      id: "sendingerFeil",
+      tekst: `Kunne ikke sjekke tidligere sendinger: ${svar.feil}`,
+      ...(svar.loggInn ? { loggInn: true } : {}),
+    };
+  }
+  const uavklart = svar.sendinger.some((s) =>
+    ["ukjent_utfall", "sendt_uten_merke", "startet"].includes(gjeldendeStatus(s.status, s.endret, naa)),
+  );
+  return uavklart ? { id: "uavklart", tekst: UAVKLART_SPERRE } : null;
 }
 
 /**
@@ -155,21 +202,42 @@ const liste = (xs: string[]) => xs.map((x) => `«${x}»`).join(", ");
 
 const OVERTID_SOM_FAKTURERES = ["Overtid 50%", "Overtid 100%"];
 
+const harTimer = (celle: string | undefined) => {
+  const n = Number((celle ?? "").trim().replace(/\s/g, "").replace(",", "."));
+  return Number.isFinite(n) && n > 0;
+};
+
 /**
- * Kolonner som gir ordrelinjer, men er skjult i PDF-en: da står det på fakturaen
- * «iht. vedlegg» om timer vedlegget ikke viser.
+ * Kolonner som hører til ordrelinjer, men er skjult i PDF-en: da står det på
+ * fakturaen «iht. vedlegg» om timer vedlegget ikke viser. Maskintimer telles bare
+ * der maskinen faktureres (ikke «Faktureres ikke»); maskinnavnet telles når timene
+ * ved siden av faktureres.
  */
-export function skjulteFaktureringskolonner(rows: Row[], columns: ColMeta[], synlige: Set<string>): string[] {
-  return columns
-    .filter((c) => /^Maskintimer\d+$/.test(c.label) || OVERTID_SOM_FAKTURERES.includes(c.label))
-    .filter((c) => !synlige.has(c.key))
-    .filter((c) =>
-      rows.some((r) => {
-        const n = Number((r[c.key] ?? "").trim().replace(/\s/g, "").replace(",", "."));
-        return Number.isFinite(n) && n > 0;
-      }),
-    )
-    .map((c) => c.label);
+export function skjulteFaktureringskolonner(
+  rows: Row[],
+  columns: ColMeta[],
+  synlige: Set<string>,
+  koblinger: Kobling[] = [],
+): string[] {
+  const faktureresIkke = new Set(koblinger.filter((k) => !k.faktureres).map((k) => k.maskinId));
+  const nokkel = (label: string) => columns.find((c) => c.label === label)?.key;
+  const ut: string[] = [];
+  for (const c of columns) {
+    if (synlige.has(c.key)) continue;
+    if (OVERTID_SOM_FAKTURERES.includes(c.label)) {
+      if (rows.some((r) => harTimer(r[c.key]))) ut.push(c.label);
+      continue;
+    }
+    const m = c.label.match(/^(Maskintimer|Maskinnavn)(\d+)$/);
+    if (!m) continue;
+    const timerKey = m[1] === "Maskintimer" ? c.key : nokkel(`Maskintimer${m[2]}`);
+    if (!timerKey) continue;
+    const fakturerbar = rows.some(
+      (r) => harTimer(r[timerKey]) && !faktureresIkke.has(Number(r[`__maskin${m[2]}`] ?? "")),
+    );
+    if (fakturerbar) ut.push(c.label);
+  }
+  return ut;
 }
 
 /** Tripletex-verdiene («Ordre 1234») på rader som skal merkes, men alt er sendt. */
@@ -251,7 +319,7 @@ export function vurderForhandsvisning(
   if (ekstra.skjulteKolonner.length) {
     advarsler.push({
       id: "skjulteKolonner",
-      tekst: `${liste(ekstra.skjulteKolonner)} faktureres, men er skjult i PDF-en. Vis ${ekstra.skjulteKolonner.length === 1 ? "kolonnen" : "kolonnene"} så vedlegget viser det som faktureres.`,
+      tekst: `${liste(ekstra.skjulteKolonner)} er skjult i PDF-en, men hører til timer som faktureres. Vis ${ekstra.skjulteKolonner.length === 1 ? "kolonnen" : "kolonnene"} så vedlegget viser det som faktureres.`,
     });
   }
   return { sperrer, advarsler };
@@ -392,6 +460,18 @@ export function lagreInn(rad: Pick<Koblingsrad, "maskinId" | "navn">, valg: { fa
     };
   }
   return { maskinId: rad.maskinId, maskinnavn, faktureres: false, produktId: null, produktnummer: null, produktnavn: null };
+}
+
+/** Kroppen som legger en tidligere lagret kobling tilbake («Angre»). */
+export function angreInn(forrige: KoblingRad): LagreKoblingInn {
+  return {
+    maskinId: forrige.maskin_id,
+    maskinnavn: forrige.maskinnavn.trim().slice(0, 200) || `Maskin ${forrige.maskin_id}`,
+    faktureres: forrige.faktureres,
+    produktId: forrige.produkt_id,
+    produktnummer: forrige.produktnummer,
+    produktnavn: forrige.produktnavn,
+  };
 }
 
 /** Søk i koblingslisten: navn, internnummer, kategori og koblet produkt. */

@@ -52,9 +52,9 @@ export function Varsel({
 }
 
 /** Feilmelding fra et Svar, med lenke til innlogging når økta er ute. */
-export function Feilmelding({ feil, loggInn }: { feil: string; loggInn?: boolean }) {
+export function Feilmelding({ feil, loggInn, tone = "feil" }: { feil: string; loggInn?: boolean; tone?: Tone }) {
   return (
-    <Varsel tone="feil" alert>
+    <Varsel tone={tone} alert={tone === "feil"}>
       <p>
         {feil}
         {loggInn && (
