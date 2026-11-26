@@ -175,7 +175,8 @@ export function byggTabell(
   // Samme definisjon av «utfylt» som i parseSmartdok.
   const populatedCols = columns
     // Fakturert starter skjult, som i Excel-flyten; den kan slås på og filtreres likevel.
-    .filter((c) => c.key !== fakturertKey)
+    // Tripletex starter også skjult: PDF-en går til eksterne kunder.
+    .filter((c) => c.key !== fakturertKey && c.key !== tripletexKey)
     .filter((c) => rows.some((r) => {
       const v = (r[c.key] ?? "").trim();
       return v !== "" && v !== "0" && v.toLowerCase() !== "x";

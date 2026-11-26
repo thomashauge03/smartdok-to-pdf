@@ -229,5 +229,5 @@ test("Tripletex-kolonnen: ordre, annet merke og ikke sendt", () => {
   assert.equal(kol.filter, true);
   assert.equal(kol.sum, undefined);
   assert.deepEqual(t.rows.map((r) => r[k]), ["Ordre 1234", "Fiken 9", "Ikke sendt"]);
-  assert.ok(t.populatedCols.includes(k));
+  assert.ok(!t.populatedCols.includes(k));
 });
