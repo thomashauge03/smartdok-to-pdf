@@ -2,9 +2,15 @@ import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import type { Tone } from "@/lib/tripletex-visning";
+import { TripletexLogo } from "@/components/TripletexLogo";
 
 // Felles ramme for Tripletex-dialogene, i SmartDok-panelets farger: gult
-// #FFDC59, grått #4A4A4A og lysegult #FFF7D6.
+// #FFDC59, grått #4A4A4A og lysegult #FFF7D6. Dialogen som legger timer på
+// ordren bruker Tripletex' farger (tema "tripletex"): blått #0A41FA, mørkere
+// #0834C7 og lyseblått #F2F5FF, fra tripletex.no.
+
+export const knappTripletex =
+  "group relative inline-flex items-center justify-center gap-2 overflow-hidden rounded-lg bg-[#0a41fa] px-4 py-2 text-sm font-bold text-white shadow-sm transition duration-150 hover:-translate-y-px hover:bg-[#0834c7] hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a41fa] active:translate-y-0 active:scale-95 disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transform-none";
 
 export const knappMork =
   "inline-flex items-center justify-center gap-2 rounded-lg bg-[#4a4a4a] px-4 py-2 text-sm font-bold text-[#ffdc59] shadow-sm transition hover:bg-[#333] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4a4a4a] disabled:cursor-not-allowed disabled:opacity-50";
@@ -80,6 +86,7 @@ export function SmartdokDialog({
   laast = false,
   onEscape,
   bredde = "max-w-3xl",
+  tema = "smartdok",
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -92,7 +99,9 @@ export function SmartdokDialog({
   /** Returnerer true når Escape ble brukt til noe annet enn å lukke dialogen. */
   onEscape?: () => boolean;
   bredde?: string;
+  tema?: "smartdok" | "tripletex";
 }) {
+  const tx = tema === "tripletex";
   return (
     <Dialog open={open} onOpenChange={(o) => (laast && !o ? undefined : onOpenChange(o))}>
       <DialogContent
@@ -102,19 +111,42 @@ export function SmartdokDialog({
         onInteractOutside={(e) => {
           if (laast) e.preventDefault();
         }}
-        className={`flex max-h-[min(92vh,56rem)] w-[calc(100%-2rem)] ${bredde} flex-col gap-0 overflow-hidden rounded-xl border-[#e6c24a] bg-white p-0 text-[#2b2b2b] sm:rounded-xl`}
+        className={`flex max-h-[min(92vh,56rem)] w-[calc(100%-2rem)] ${bredde} flex-col gap-0 overflow-hidden rounded-xl bg-white p-0 text-[#2b2b2b] sm:rounded-xl ${
+          tx ? "border-[#c9d4ff]" : "border-[#e6c24a]"
+        }`}
       >
-        <div className="border-b border-[#e6c24a] bg-[#ffdc59] py-4 pl-6 pr-12 text-[#4a4a4a]">
-          <DialogTitle className="text-base font-bold tracking-tight">{tittel}</DialogTitle>
-          {beskrivelse ? (
-            <DialogDescription className="mt-1 text-xs text-[#4a4a4a]/80">{beskrivelse}</DialogDescription>
-          ) : (
-            <DialogDescription className="sr-only">{tittel}</DialogDescription>
-          )}
-        </div>
+        {tx ? (
+          <div className="relative flex items-center gap-4 border-b-4 border-[#0a41fa] bg-white py-4 pl-6 pr-12">
+            <TripletexLogo className="h-8 w-auto shrink-0" />
+            <span aria-hidden className="h-8 w-px bg-[#0a41fa]/20" />
+            <div className="min-w-0">
+              <DialogTitle className="text-base font-bold tracking-tight text-[#010a59]">{tittel}</DialogTitle>
+              {beskrivelse ? (
+                <DialogDescription className="mt-1 text-xs text-[#010a59]/70 sm:truncate">{beskrivelse}</DialogDescription>
+              ) : (
+                <DialogDescription className="sr-only">{tittel}</DialogDescription>
+              )}
+            </div>
+            {/* Blått lys som glir langs kanten mens linjene sendes. */}
+            {laast && <span aria-hidden className="tripletex-glid absolute inset-x-0 -bottom-1 h-1" />}
+          </div>
+        ) : (
+          <div className="border-b border-[#e6c24a] bg-[#ffdc59] py-4 pl-6 pr-12 text-[#4a4a4a]">
+            <DialogTitle className="text-base font-bold tracking-tight">{tittel}</DialogTitle>
+            {beskrivelse ? (
+              <DialogDescription className="mt-1 text-xs text-[#4a4a4a]/80">{beskrivelse}</DialogDescription>
+            ) : (
+              <DialogDescription className="sr-only">{tittel}</DialogDescription>
+            )}
+          </div>
+        )}
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">{children}</div>
         {bunn && (
-          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[#e6c24a] bg-[#fff7d6] px-6 py-3">
+          <div
+            className={`flex flex-wrap items-center justify-end gap-2 border-t px-6 py-3 ${
+              tx ? "border-[#c9d4ff] bg-[#f2f5ff]" : "border-[#e6c24a] bg-[#fff7d6]"
+            }`}
+          >
             {bunn}
           </div>
         )}

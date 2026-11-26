@@ -9,6 +9,7 @@ import {
   etikett,
   knappLys,
   knappMork,
+  knappTripletex,
 } from "@/components/SmartdokDialog";
 import { Koblingsliste } from "@/components/Koblingsliste";
 import { Sendinger } from "@/components/Sendinger";
@@ -328,7 +329,8 @@ export function LeggPaaOrdre({
         <button type="button" className={knappLys} onClick={() => onOpenChange(false)} disabled={fase === "sender"}>
           Avbryt
         </button>
-        <button type="button" className={knappMork} onClick={() => void send()} disabled={!kanSende}>
+        <button type="button" className={knappTripletex} onClick={() => void send()} disabled={!kanSende}>
+          <span aria-hidden className="tripletex-skjaer pointer-events-none absolute inset-y-0 left-0 w-1/4 bg-gradient-to-r from-transparent via-white/40 to-transparent" />
           {fase === "sender" ? (
             <>
               <Spinner lys /> Legger på ordre…
@@ -345,6 +347,7 @@ export function LeggPaaOrdre({
       open={open}
       onOpenChange={onOpenChange}
       laast={fase === "sender"}
+      tema="tripletex"
       tittel="Legg på ordre i Tripletex"
       beskrivelse={`Prosjekt ${kilde.nummer} ${kilde.navn} · ${fmtDato(kilde.fra)}–${fmtDato(kilde.til)}`}
       bunn={bunn}

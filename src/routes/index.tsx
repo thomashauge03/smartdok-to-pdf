@@ -17,7 +17,6 @@ import {
   RectangleHorizontal,
   RectangleVertical,
   LogOut,
-  Send,
 } from "lucide-react";
 import {
   parseSmartdok,
@@ -33,6 +32,7 @@ import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from "@/compone
 import { HentFraSmartdok, hentSmartdokTabell } from "@/components/HentFraSmartdok";
 import { LeggPaaOrdre, type SmartdokKilde } from "@/components/LeggPaaOrdre";
 import { Sendinger } from "@/components/Sendinger";
+import { TripletexSymbol } from "@/components/TripletexLogo";
 import { Checkbox } from "@/components/ui/checkbox";
 import { behold, BEKREFT_OPPDATERING, forhandsfiltre, TABELL_IKKE_OPPDATERT } from "@/lib/tabelloppsett";
 
@@ -628,9 +628,15 @@ function Index() {
                       type="button"
                       onClick={() => setOrdreAapen(true)}
                       disabled={busy}
-                      className="inline-flex items-center gap-2 rounded-lg bg-[#ffdc59] px-4 py-1.5 text-xs font-bold text-[#4a4a4a] shadow-sm transition hover:bg-[#f7d044] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ffdc59]/60 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="group relative inline-flex items-center gap-2 overflow-hidden rounded-lg bg-[#0a41fa] py-1 pl-1 pr-4 text-xs font-bold text-white shadow-sm transition duration-200 hover:-translate-y-0.5 hover:bg-[#0834c7] hover:shadow-[0_10px_22px_-10px_rgba(10,65,250,0.75)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0a41fa]/60 focus-visible:ring-offset-1 active:translate-y-0 active:scale-95 disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transform-none"
                     >
-                      <Send className="h-3.5 w-3.5" />Legg på ordre i Tripletex
+                      {/* Lysskjæret glir over det blå når musa kommer inn. */}
+                      <span aria-hidden className="tripletex-skjaer pointer-events-none absolute inset-y-0 left-0 w-1/4 bg-gradient-to-r from-transparent via-white/40 to-transparent" />
+                      {/* Symbolet er tre farger og trenger lys bakgrunn, derfor det hvite merket. */}
+                      <span className="relative flex h-6 w-6 items-center justify-center rounded-md bg-white transition duration-200 group-hover:rotate-[-6deg] group-hover:scale-110 motion-reduce:transform-none">
+                        <TripletexSymbol className="h-4 w-auto" />
+                      </span>
+                      <span className="relative">Legg på ordre i Tripletex</span>
                     </button>
                   </>
                 )}

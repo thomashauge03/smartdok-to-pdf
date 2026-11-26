@@ -170,3 +170,25 @@
   .smartdok-striper { animation: none; }
   .group:hover .smartdok-skjaer { animation: none; }
 }
+
+/* Tripletex-knappen og -dialogen: et blått lys som glir langs kanten mens linjene
+   sendes, og et lysskjær over knappen når musa kommer inn. Tripletex' blå: #0A41FA. */
+@keyframes tripletex-glid {
+  from { background-position: -40% 0; }
+  to { background-position: 140% 0; }
+}
+.tripletex-glid {
+  background: linear-gradient(90deg, transparent 0%, #0a41fa 35%, #58b3cd 50%, #0a41fa 65%, transparent 100%) no-repeat;
+  background-size: 40% 100%;
+  animation: tripletex-glid 1.1s ease-in-out infinite;
+}
+.tripletex-skjaer {
+  transform: translateX(-120%) skewX(-20deg);
+}
+.group:hover .tripletex-skjaer {
+  animation: smartdok-skjaer 0.9s ease-out 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tripletex-glid { animation: none; background: #0a41fa; }
+  .group:hover .tripletex-skjaer { animation: none; }
+}
