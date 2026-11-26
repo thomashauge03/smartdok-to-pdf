@@ -9,7 +9,7 @@ export type Ordrelinje = { produktId: number; produktnavn: string; antall: numbe
 export type Ordreberegning = {
   linjer: Ordrelinje[];
   timerIder: number[];
-  advarsler: { utenMaskin: number; haandlagde: number; utenKobling: string[]; utenPris: string[] };
+  advarsler: { utenMaskin: number; haandlagde: number; utenKobling: string[]; utenPris: string[]; ukjentOvertid: string[] };
 };
 
 const OVERTID: { label: string; nummer: string }[] = [
@@ -22,6 +22,8 @@ function lesTall(celle: string | undefined, hvor: string): number {
   const s = (celle ?? "").trim().replace(/\s/g, "").replace(",", ".");
   if (s === "") return 0;
   if (!/^-?\d+(\.\d+)?$/.test(s)) throw new Error(`Kan ikke lese «${celle}» som timer (${hvor}). Rett cellen før du sender.`);
+  // Negative timer ville trukket fra ordren uten at noen merker det.
+  if (s.startsWith("-")) throw new Error(`Negative timer («${celle}») er ikke tillatt (${hvor}). Rett cellen før du sender.`);
   return Number(s);
 }
 
@@ -42,6 +44,8 @@ export function beregnOrdrelinjer(
     if (m) slots.push({ i: Number(m[1]), timer: c.key, navn: finn(`Maskinnavn${m[1]}`) });
   }
   const overtidKolonner = OVERTID.map((o) => ({ ...o, key: finn(o.label) }));
+  // Andre «Overtid …»-kolonner har ikke produkt; de varsles, de blir aldri stille borte.
+  const ukjenteOvertid = columns.filter((c) => /^overtid/i.test(c.label) && !OVERTID.some((o) => o.label === c.label));
 
   const kobling = new Map(koblinger.map((k) => [k.maskinId, k]));
   const produktFraId = new Map(produkter.map((p) => [p.id, p]));
@@ -51,6 +55,7 @@ export function beregnOrdrelinjer(
   const leggTil = (p: Produkt, timer: number) => sum.set(p.id, (sum.get(p.id) ?? 0) + timer);
   const utenKobling = new Set<string>();
   const utenPris = new Set<string>();
+  const ukjentOvertid = new Set<string>();
   const timerIder = new Set<number>();
   let utenMaskin = 0;
   let haandlagde = 0;
@@ -58,25 +63,31 @@ export function beregnOrdrelinjer(
   rows.forEach((row, radNr) => {
     const hvor = (kol: string) => `rad ${radNr + 1}, ${kol}`;
     const idTekst = (row["__id"] ?? "").trim();
-    const id = idTekst === "" ? null : Number(idTekst);
-    if (id === null) haandlagde++;
+    // Håndlagde rader (uten __id) kan ikke merkes som sendt: de vises som advarsel og blir aldri linjer.
+    if (idTekst === "") { haandlagde++; return; }
+    if (!/^[0-9]+$/.test(idTekst)) throw new Error(`Ugyldig __id «${idTekst}» (${hvor("__id")}).`);
+    const id = Number(idTekst);
 
     let harFakturertTimer = false; // linje laget fra denne raden
-    let harMaskinEllerOvertid = false; // noe timer-ført, uavhengig av om det ble linje
+    let harFakturertMaskin = false; // minst én maskin ga linje
+    let harMaskin = false; // minst én maskin med timer (også ukoblet eller faktureres:false)
+    let harIkkeFakturertMaskin = false; // maskin med timer som ikke ga linje fordi faktureres:false
 
     for (const s of slots) {
       const timer = lesTall(row[s.timer], hvor(`Maskintimer${s.i}`));
       if (timer <= 0) continue;
-      harMaskinEllerOvertid = true;
+      harMaskin = true;
       const k = kobling.get(Number(row[`__maskin${s.i}`] ?? ""));
-      if (k && !k.faktureres) continue; // bevisst ikke fakturert: ingen linje, ingen advarsel
+      if (k && !k.faktureres) { harIkkeFakturertMaskin = true; continue; } // bevisst ikke fakturert: ingen linje, ingen advarsel
+      const navn = (s.navn ? row[s.navn] : "")?.trim() || `Maskin ${s.i}`;
       const p = k && k.produktId !== null ? produktFraId.get(k.produktId) : undefined;
       if (!p) {
-        utenKobling.add((s.navn ? row[s.navn] : "")?.trim() || `Maskin ${s.i}`);
+        utenKobling.add(k && k.produktId !== null ? `${navn} (produktet finnes ikke lenger i Tripletex)` : navn);
         continue;
       }
       leggTil(p, timer);
       harFakturertTimer = true;
+      harFakturertMaskin = true;
       if (!p.pris) utenPris.add(p.navn);
     }
 
@@ -84,7 +95,6 @@ export function beregnOrdrelinjer(
       if (!o.key) continue;
       const timer = lesTall(row[o.key], hvor(o.label));
       if (timer <= 0) continue;
-      harMaskinEllerOvertid = true;
       const p = produktFraNummer(o.nummer);
       if (!p) {
         utenPris.add(`${o.nummer} ${o.label} (produktet finnes ikke i Tripletex)`);
@@ -94,11 +104,15 @@ export function beregnOrdrelinjer(
       harFakturertTimer = true;
       if (!p.pris) utenPris.add(p.navn);
     }
-
-    if (id !== null) {
-      if (harFakturertTimer) timerIder.add(id);
-      if (!harMaskinEllerOvertid && timerKey) utenMaskin += lesTall(row[timerKey], hvor("Timer"));
+    for (const c of ukjenteOvertid) {
+      if (lesTall(row[c.key], hvor(c.label)) > 0) ukjentOvertid.add(c.label);
     }
+
+    if (harFakturertTimer) timerIder.add(id);
+    // «Timer uten fakturerbar maskin»: ingen maskin ga linje, og ingen ukoblet maskin har eget varsel.
+    // Overtid skjuler ikke dette; den faktureres som tillegg uansett. Kun advarsel, aldri sperre.
+    const ukoblet = harMaskin && !harFakturertMaskin && !harIkkeFakturertMaskin;
+    if (!harFakturertMaskin && !ukoblet && timerKey) utenMaskin += lesTall(row[timerKey], hvor("Timer"));
   });
 
   const linjer: Ordrelinje[] = [...sum.entries()]
@@ -115,7 +129,7 @@ export function beregnOrdrelinjer(
   return {
     linjer,
     timerIder: [...timerIder].sort((a, b) => a - b),
-    advarsler: { utenMaskin: rund2(utenMaskin), haandlagde, utenKobling: [...utenKobling], utenPris: [...utenPris] },
+    advarsler: { utenMaskin: rund2(utenMaskin), haandlagde, utenKobling: [...utenKobling], utenPris: [...utenPris], ukjentOvertid: [...ukjentOvertid] },
   };
 }
 
