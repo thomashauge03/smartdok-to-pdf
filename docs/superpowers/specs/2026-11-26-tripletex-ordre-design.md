@@ -192,6 +192,32 @@ med tilgang til siden.
 - **Koblingslisten:** alle med tilgang kan endre den. Hver endring logges (hvem,
   når, fra og til) i adminbordets `hendelseslogg`.
 
+## Endring 2026-11-26: alt går til ordren (Thomas)
+
+Ordren i Tripletex er godkjenningen: «dem skal jo bare gå til ordre uansett
+slik at vi må godkjenne». Det erstatter sperrene og utelatelsene over for disse
+fem tilfellene:
+
+1. **Maskin uten kobling** (eller kobling til et produkt som ikke finnes lenger):
+   tekstlinje uten produkt, én per maskinnavn, tekst «<maskinnavn> – arbeid
+   utført iht. vedlegg», 0 kr. Fylles ut i Tripletex.
+2. **Produkt uten pris** (listepris eller pris fra Tripletex-malen er tom eller
+   0): linjen legges på med 0 kr.
+3. **Timer allerede fakturert i SmartDok:** tas med som vanlige linjer.
+   Forhåndsvisningen sier fortsatt hvor mange timer det gjelder.
+4. **Overtid uten fakturerbar maskin:** linje på «50 % overtidsarbeid» (608) /
+   «100 % overtidsarbeid» (609) som ellers.
+5. **Timer uten maskin**, også når alle maskinene på raden er «faktureres
+   ikke»: personens timer (Timer-kolonnen) blir linje på «Grunnarbeider» (602).
+   En rad med en ukoblet maskin har maskin (tilfelle 1), så personens timer
+   legges ikke i tillegg.
+
+Mangler 602, 608 eller 609 i Tripletex, blir det tekstlinjer med samme navn.
+Forhåndsvisningen viser tilfellene 1–3 som informasjon («sjekk i Tripletex før
+fakturering»), ikke som sperre. Fortsatt sperret: timer som allerede er sendt
+fra appen, og en sending uten linjer. Håndlagde rader blir fortsatt ikke
+linjer. Alle rader som gir minst én linje, merkes i SmartDok.
+
 ## Kjente fallgruver i Tripletex (fra grusappen)
 
 Fra `hauge-maskin-grus/docs/superpowers/TRIPLETEX-OVERLEVERING.md`:
